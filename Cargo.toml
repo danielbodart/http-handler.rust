@@ -2,6 +2,12 @@
 name = "http_handler"
 version = "0.0.0-dev"
 authors = ["Daniel Worthington-Bodart <dan@bodar.com>"]
+description = "Rust Implementation of HttpHandler"
+documentation = "https://github.com/danielbodart/http-handler.rust"
+homepage = "https://github.com/danielbodart/http-handler.rust"
+repository = "https://github.com/danielbodart/http-handler.rust.git"
+readme = "README.md"
+license = "Apache-2.0"
 
 [dependencies]
 regex = "0.1.80"
