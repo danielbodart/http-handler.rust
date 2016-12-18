@@ -1,0 +1,11 @@
+[package]
+name = "http_handler"
+version = "0.0.0-dev"
+authors = ["Daniel Worthington-Bodart <dan@bodar.com>"]
+
+[dependencies]
+regex = "0.1.80"
+
+[dependencies.nom]
+version = "2.0.1"
+features = ["regexp","verbose-errors"]
