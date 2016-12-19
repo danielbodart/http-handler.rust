@@ -1,6 +1,6 @@
 #[macro_use] extern crate nom;
 
-use nom::{digit, alphanumeric};
+use nom::{digit, is_digit, is_alphabetic};
 use std::str;
 
 // HTTP-name     = %x48.54.54.50 ; "HTTP", case-sensitive
@@ -33,6 +33,28 @@ fn as_digit(slice: &[u8]) -> u8 {
     slice[0] - 48
 }
 
+macro_rules! or {
+    ( $( $predicate:expr ),* ) => {
+        Box::new(move |chr| {
+            $( $predicate(chr) || )* false
+        })
+    };
+}
+
+macro_rules! and {
+    ( $( $predicate:expr ),* ) => {
+        Box::new(move |chr| {
+            $( $predicate(chr) && )* true
+        })
+    };
+}
+
+pub fn among<'a>(characters:&'a [u8]) -> Box<Fn(u8) -> bool + 'a> {
+    Box::new(move |chr| {
+        characters.iter().any(|&it| it == chr)
+    })
+}
+
 // HTTP-version  = HTTP-name "/" DIGIT "." DIGIT
 named!(http_version<HttpVersion>, do_parse!(
     http_name >> tag!("/") >> major: digit >> tag!(".") >> minor: digit >>
@@ -42,11 +64,12 @@ named!(http_version<HttpVersion>, do_parse!(
 named!(space, tag!(" "));
 named!(crlf, tag!("\r\n"));
 
-// TODO: Do it properly!
-named!(request_target, is_not!(" "));
+// TODO: Do we need to be stricter?
+named!(request_target, is_not_s!(" "));
+
 
 // tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." / "^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA
-//named!(tchar, alt!(one_of!("!#$%&'*+-.^_`|~") | alphanumeric));
+named!(tchar, filter!(or!(among(&b"!#$%&'*+-.^_`|~"[..]), is_digit, is_alphabetic)));
 
 ////token = 1*tchar
 //named!(token, many1!(tchar));
@@ -86,7 +109,12 @@ mod tests {
     }
 
     #[test]
+    fn tchar() {
+        assert_eq!(super::tchar(&b"abc"[..]), IResult::Done(&b"bc"[..], &b"a"[..]));
+    }
+
+    #[test]
     fn request_line() {
-//        assert_eq!(super::request_line(&b"GET /a/test HTTP/1.1\r\n"[..]), IResult::Done(&b""[..], (&b"GET"[..], &b"/a/test"[..], (&b"1"[..], &b"1"[..]))));
+        //        assert_eq!(super::request_line(&b"GET /a/test HTTP/1.1\r\n"[..]), IResult::Done(&b""[..], (&b"GET"[..], &b"/a/test"[..], (&b"1"[..], &b"1"[..]))));
     }
 }
