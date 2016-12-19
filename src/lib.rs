@@ -49,9 +49,9 @@ macro_rules! and {
     };
 }
 
-pub fn among<'a>(characters:&'a [u8]) -> Box<Fn(u8) -> bool + 'a> {
+pub fn among<'a>(characters:&'a str) -> Box<Fn(u8) -> bool + 'a> {
     Box::new(move |chr| {
-        characters.iter().any(|&it| it == chr)
+        characters.chars().any(|it| it == chr as char)
     })
 }
 
@@ -69,7 +69,7 @@ named!(request_target, is_not_s!(" "));
 
 
 // tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." / "^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA
-named!(tchar, filter!(or!(among(&b"!#$%&'*+-.^_`|~"[..]), is_digit, is_alphabetic)));
+named!(tchar, filter!(or!(among("!#$%&'*+-.^_`|~"), is_digit, is_alphabetic)));
 
 ////token = 1*tchar
 //named!(token, many1!(tchar));
