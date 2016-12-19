@@ -7,7 +7,7 @@ use std::str;
 named!(http_name, tag!("HTTP"));
 
 #[derive(PartialEq, Debug)]
-pub struct Version {
+pub struct HttpVersion {
     major: u8,
     minor: u8,
 }
@@ -34,9 +34,9 @@ fn as_digit(slice: &[u8]) -> u8 {
 }
 
 // HTTP-version  = HTTP-name "/" DIGIT "." DIGIT
-named!(http_version<Version>, do_parse!(
+named!(http_version<HttpVersion>, do_parse!(
     http_name >> tag!("/") >> major: digit >> tag!(".") >> minor: digit >>
-    (Version { major: as_digit(major), minor: as_digit(minor)})
+    (HttpVersion { major: as_digit(major), minor: as_digit(minor)})
   ));
 
 named!(space, tag!(" "));
@@ -82,7 +82,7 @@ mod tests {
 
     #[test]
     fn http_version() {
-        assert_eq!(super::http_version(&b"HTTP/1.2"[..]), IResult::Done(&b""[..], Version { major: 1, minor: 2 }));
+        assert_eq!(super::http_version(&b"HTTP/1.2"[..]), IResult::Done(&b""[..], HttpVersion { major: 1, minor: 2 }));
     }
 
     #[test]
