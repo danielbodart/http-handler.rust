@@ -25,7 +25,7 @@ named!(request_target, is_not_s!(" "));
 named!(tchar, filter!(or!(among("!#$%&'*+-.^_`|~"), is_digit, is_alphabetic)));
 
 ////token = 1*tchar
-//named!(token, many1!(tchar));
+named!(token, map!(many1!(tchar), join_vec));
 
 //method = token
 //named!(method, call!(token));
@@ -73,6 +73,11 @@ mod tests {
     #[test]
     fn tchar() {
         assert_eq!(super::tchar(&b"abc"[..]), Done(&b"bc"[..], &b"a"[..]));
+    }
+
+    #[test]
+    fn token() {
+        assert_eq!(super::token(&b"abc"[..]), Done(&b""[..], &b"abc"[..]));
     }
 
     #[test]
