@@ -3,7 +3,7 @@ extern crate nom;
 use std::slice;
 
 #[macro_export]
-macro_rules! filter (
+macro_rules! char_predicate (
   ($i:expr, $c: expr) => (
     {
       if $i.is_empty() {
