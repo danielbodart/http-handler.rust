@@ -12,9 +12,9 @@ named!(http_name, tag!("HTTP"));
 named!(digit, char_predicate!(is_digit));
 
 // HTTP-version  = HTTP-name "/" DIGIT "." DIGIT
-named!(http_version<HttpVersion>, do_parse!(
+named!(http_version <HttpVersion>, do_parse!(
     http_name >> tag!("/") >> major: digit >> tag!(".") >> minor: digit >>
-    (HttpVersion { major: as_digit(major), minor: as_digit(minor)})
+    (HttpVersion { major: asci_digit(major), minor: asci_digit(minor)})
   ));
 
 named!(space, tag!(" "));
