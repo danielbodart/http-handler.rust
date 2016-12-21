@@ -64,13 +64,39 @@ named!(status_line <StatusLine>, do_parse!(
 // start-line     = request-line / status-line
 named!(start_line <StartLine>, alt!(map!(request_line, StartLine::RequestLine) | map!(status_line, StartLine::StatusLine)));
 
-/*
- HTTP-message   = start-line
-                      *( header-field CRLF )
-                      CRLF
-                      [ message-body ]
- */
+// field-name     = token
+named!(field_name <&str>, map_res!(token, str::from_utf8));
 
+// field-vchar    = VCHAR / obs-text
+named!(field_vchar, alt!(vchar | obs_text));
+
+// field-content  = field-vchar [ 1*( SP / HTAB ) field-vchar ]
+named!(field_content, do_parse!(
+    chr:field_vchar >>
+    optional: opt!(map!(pair!(
+        map!(many1!(alt!(space | htab)), join_vec),
+        field_vchar), join_pair)) >>
+    (match optional {
+        Some(other) => join_slice(chr, other),
+        None => chr,
+    })
+  ));
+
+
+/*
+
+
+     header-field   = field-name ":" OWS field-value OWS
+
+     field-name     = token
+     field-value    = *( field-content / obs-fold )
+
+
+     obs-fold       = CRLF 1*( SP / HTAB ) ; obsolete line folding
+
+
+     HTTP-message   = start-line ( header-field CRLF ) CRLF [ message-body ]
+*/
 
 #[cfg(test)]
 mod tests {
@@ -135,5 +161,17 @@ mod tests {
     fn start_line() {
         assert_eq!(super::start_line(&b"GET /where?q=now HTTP/1.1\r\n"[..]), Done(&b""[..], StartLine::RequestLine(RequestLine { method: "GET", request_target: "/where?q=now", version: HttpVersion { major: 1, minor: 1, } })));
         assert_eq!(super::start_line(&b"HTTP/1.1 200 OK\r\n"[..]), Done(&b""[..], StartLine::StatusLine(StatusLine { version: HttpVersion { major: 1, minor: 1, }, code: 200, description: "OK" })));
+    }
+
+    #[test]
+    fn field_name() {
+        assert_eq!(super::field_name(&b"Content-Type"[..]), Done(&b""[..], "Content-Type"));
+    }
+
+    #[test]
+    fn field_content() {
+        assert_eq!(super::field_content(&b"a  b"[..]), Done(&b""[..], &b"a  b"[..]));
+        assert_eq!(super::field_content(&b"a b"[..]), Done(&b""[..], &b"a b"[..]));
+        assert_eq!(super::field_content(&b"a"[..]), Done(&b""[..], &b"a"[..]));
     }
 }

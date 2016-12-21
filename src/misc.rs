@@ -12,6 +12,10 @@ pub fn join_vec<'a>(vec: Vec<&'a [u8]>) -> &'a [u8] {
     it.next().map(|first| it.fold(first, join_slice)).unwrap()
 }
 
+pub fn join_pair<'a>(pair: (&'a [u8], &'a [u8])) -> &'a [u8] {
+    join_slice(pair.0, pair.1)
+}
+
 pub fn asci_digit(slice: &[u8]) -> u8 {
     slice[0] - 48
 }
