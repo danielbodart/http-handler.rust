@@ -10,3 +10,10 @@ pub struct RequestLine<'a> {
     pub request_target: &'a str,
     pub version: HttpVersion,
 }
+
+#[derive(PartialEq, Debug)]
+pub struct StatusLine<'a> {
+    pub version: HttpVersion,
+    pub code: u8,
+    pub description: &'a str,
+}

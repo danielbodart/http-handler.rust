@@ -1,4 +1,4 @@
-use std::slice;
+use std::{slice, num};
 
 pub fn join_slice<'a>(slice1: &'a [u8], slice2: &'a [u8]) -> &'a [u8] {
     unsafe {
@@ -14,6 +14,10 @@ pub fn join_vec<'a>(vec: Vec<&'a [u8]>) -> &'a [u8] {
 
 pub fn asci_digit(slice: &[u8]) -> u8 {
     slice[0] - 48
+}
+
+pub fn parse_u8(value: &str) -> Result<u8, num::ParseIntError> {
+    value.parse::<u8>()
 }
 
 #[cfg(test)]

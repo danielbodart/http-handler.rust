@@ -1,10 +1,11 @@
 extern crate nom;
 
 use nom::{is_digit, is_alphabetic};
+use std::str;
+
 use misc::*;
 use ast::*;
 use predicates::*;
-use std::str;
 
 // HTTP-name     = %x48.54.54.50 ; "HTTP", case-sensitive
 named!(http_name, tag!("HTTP"));
@@ -48,12 +49,16 @@ named!(request_line <RequestLine>, do_parse!(
   ));
 
 //status-code    = 3DIGIT
-named!(status_code <&str>, map_res!(map!(many_m_n!(3,3, digit), join_vec), str::from_utf8));
+named!(status_code <u8>, map_res!(map_res!(map!(many_m_n!(3,3, digit), join_vec), str::from_utf8), parse_u8));
 
 //reason-phrase  = *( HTAB / SP / VCHAR / obs-text )
 named!(reason_phrase <&str>, map_res!(map!(many0!(alt!(htab | space | vchar | obs_text)), join_vec), str::from_utf8));
 
 // status-line = HTTP-version SP status-code SP reason-phrase CRLF
+named!(status_line <StatusLine>, do_parse!(
+    version: http_version >> space >> status: status_code >> space >> reason_phrase:reason_phrase >> crlf >>
+    (StatusLine { version: version, code: status, description: reason_phrase })
+  ));
 
 /*
 start-line     = request-line / status-line
@@ -111,7 +116,7 @@ mod tests {
 
     #[test]
     fn status_code() {
-        assert_eq!(super::status_code(&b"200"[..]), Done(&b""[..], "200"));
+        assert_eq!(super::status_code(&b"200"[..]), Done(&b""[..], 200));
     }
 
     #[test]
@@ -119,4 +124,10 @@ mod tests {
         assert_eq!(super::reason_phrase(&b"OK"[..]), Done(&b""[..], "OK"));
         assert_eq!(super::reason_phrase(&b"Not Found"[..]), Done(&b""[..], "Not Found"));
     }
+
+    #[test]
+    fn status_line() {
+        assert_eq!(super::status_line(&b"HTTP/1.1 200 OK\r\n"[..]), Done(&b""[..], StatusLine{ version: HttpVersion { major: 1, minor: 1,}, code: 200, description: "OK"}));
+    }
+
 }
