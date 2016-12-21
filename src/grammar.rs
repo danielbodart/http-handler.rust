@@ -93,11 +93,6 @@ named!(field_value <String>, map_res!(many0!(alt!(field_content | obs_fold)), to
 
      header-field   = field-name ":" OWS field-value OWS
 
-     field-value    = *( field-content / obs-fold )
-
-
-
-
      HTTP-message   = start-line ( header-field CRLF ) CRLF [ message-body ]
 */
 
