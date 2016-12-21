@@ -17,8 +17,16 @@ named!(http_version <HttpVersion>, do_parse!(
     (HttpVersion { major: asci_digit(major), minor: asci_digit(minor)})
   ));
 
+// SP             =  %x20
 named!(space, tag!(" "));
+// CRLF           =  CR LF ; Internet standard newline
 named!(crlf, tag!("\r\n"));
+// HTAB           =  %x09 ; horizontal tab
+named!(htab, tag!("\t"));
+// VCHAR          =  %x21-7E ; visible (printing) characters
+named!(vchar, char_predicate!(range(0x21,0x7E)));
+// obs-text       = %x80-FF ; obsolete text
+named!(obs_text, char_predicate!(range(0x80,0xFF)));
 
 // TODO: full impl
 named!(request_target <&str>, map_res!(is_not!(" "), str::from_utf8));
@@ -38,6 +46,14 @@ named!(request_line <RequestLine>, do_parse!(
     method: method >> space >> request_target: request_target >> space >> version: http_version >> crlf >>
     (RequestLine { method: method, request_target: request_target, version: version })
   ));
+
+//status-code    = 3DIGIT
+named!(status_code <&str>, map_res!(map!(many_m_n!(3,3, digit), join_vec), str::from_utf8));
+
+//reason-phrase  = *( HTAB / SP / VCHAR / obs-text )
+//named!(reason_phrase <&str>, map_res!(map!(many0!(alt!(htab, space, vchar, obs_text)), join_vec), str::from_utf8));
+
+// status-line = HTTP-version SP status-code SP reason-phrase CRLF
 
 /*
 start-line     = request-line / status-line
@@ -91,5 +107,16 @@ mod tests {
     #[test]
     fn request_line() {
         assert_eq!(super::request_line(&b"GET /where?q=now HTTP/1.1\r\n"[..]), Done(&b""[..], RequestLine{ method: "GET", request_target: "/where?q=now", version: HttpVersion { major: 1, minor: 1,}}));
+    }
+
+    #[test]
+    fn status_code() {
+        assert_eq!(super::status_code(&b"200"[..]), Done(&b""[..], "200"));
+    }
+
+    #[test]
+    fn reason_phrase() {
+//        assert_eq!(super::reason_phrase(&b"OK"[..]), Done(&b""[..], "OK"));
+//        assert_eq!(super::reason_phrase(&b"Not Found"[..]), Done(&b""[..], "Not Found"));
     }
 }

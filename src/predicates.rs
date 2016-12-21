@@ -37,3 +37,9 @@ pub fn among<'a>(characters: &'a str) -> Box<Fn(u8) -> bool + 'a> {
         characters.chars().any(|it| it == chr as char)
     })
 }
+
+pub fn range(start:u8, end:u8) -> Box<Fn(u8) -> bool> {
+    Box::new(move |chr| {
+        chr >= start && chr <= end
+    })
+}
