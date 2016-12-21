@@ -51,7 +51,7 @@ named!(request_line <RequestLine>, do_parse!(
 named!(status_code <&str>, map_res!(map!(many_m_n!(3,3, digit), join_vec), str::from_utf8));
 
 //reason-phrase  = *( HTAB / SP / VCHAR / obs-text )
-//named!(reason_phrase <&str>, map_res!(map!(many0!(alt!(htab, space, vchar, obs_text)), join_vec), str::from_utf8));
+named!(reason_phrase <&str>, map_res!(map!(many0!(alt!(htab | space | vchar | obs_text)), join_vec), str::from_utf8));
 
 // status-line = HTTP-version SP status-code SP reason-phrase CRLF
 
@@ -116,7 +116,7 @@ mod tests {
 
     #[test]
     fn reason_phrase() {
-//        assert_eq!(super::reason_phrase(&b"OK"[..]), Done(&b""[..], "OK"));
-//        assert_eq!(super::reason_phrase(&b"Not Found"[..]), Done(&b""[..], "Not Found"));
+        assert_eq!(super::reason_phrase(&b"OK"[..]), Done(&b""[..], "OK"));
+        assert_eq!(super::reason_phrase(&b"Not Found"[..]), Done(&b""[..], "Not Found"));
     }
 }
