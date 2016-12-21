@@ -73,15 +73,14 @@ named!(field_vchar, alt!(vchar | obs_text));
 // field-content  = field-vchar [ 1*( SP / HTAB ) field-vchar ]
 named!(field_content, do_parse!(
     chr:field_vchar >>
-    optional: opt!(map!(pair!(
+    optional: opt!(complete!(map!(pair!(
         map!(many1!(alt!(space | htab)), join_vec),
-        field_vchar), join_pair)) >>
+        field_vchar), join_pair))) >>
     (match optional {
         Some(other) => join_slice(chr, other),
         None => chr,
     })
   ));
-
 
 /*
 
