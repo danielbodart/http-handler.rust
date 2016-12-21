@@ -1,9 +1,12 @@
-use std::{slice, num};
+use std::{slice, num, string};
 
 pub fn join_slice<'a>(slice1: &'a [u8], slice2: &'a [u8]) -> &'a [u8] {
     unsafe {
-        assert_eq!(slice2.as_ptr(), slice1.as_ptr().offset(slice1.len() as isize));
-        slice::from_raw_parts(slice1.as_ptr(), slice1.len() + slice2.len())
+        if slice2.as_ptr() == slice1.as_ptr().offset(slice1.len() as isize) {
+            slice::from_raw_parts(slice1.as_ptr(), slice1.len() + slice2.len())
+        } else {
+            panic!("Can not join slices that are not next to each other");
+        }
     }
 }
 
@@ -22,6 +25,10 @@ pub fn asci_digit(slice: &[u8]) -> u8 {
 
 pub fn parse_u8(value: &str) -> Result<u8, num::ParseIntError> {
     value.parse::<u8>()
+}
+
+pub fn to_string(vec:Vec<&[u8]>) -> Result<String, string::FromUtf8Error> {
+    String::from_utf8(vec.concat())
 }
 
 #[cfg(test)]

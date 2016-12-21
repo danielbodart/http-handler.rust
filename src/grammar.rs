@@ -1,7 +1,7 @@
 extern crate nom;
 
 use nom::{is_digit, is_alphabetic};
-use std::str;
+use std::{str};
 
 use misc::*;
 use ast::*;
@@ -70,28 +70,32 @@ named!(field_name <&str>, map_res!(token, str::from_utf8));
 // field-vchar    = VCHAR / obs-text
 named!(field_vchar, alt!(vchar | obs_text));
 
+named!(spaces, map!(many1!(alt!(space | htab)), join_vec));
+
 // field-content  = field-vchar [ 1*( SP / HTAB ) field-vchar ]
 named!(field_content, do_parse!(
     chr:field_vchar >>
-    optional: opt!(complete!(map!(pair!(
-        map!(many1!(alt!(space | htab)), join_vec),
-        field_vchar), join_pair))) >>
+    optional: opt!(complete!(map!(pair!( spaces, field_vchar), join_pair))) >>
     (match optional {
         Some(other) => join_slice(chr, other),
         None => chr,
     })
   ));
 
+// obs-fold       = CRLF 1*( SP / HTAB ) ; obsolete line folding
+named!(obs_fold, do_parse!( crlf >> spaces >> (&b""[..]) ));
+
+// field-value    = *( field-content / obs-fold )
+named!(field_value <String>, map_res!(many0!(alt!(field_content | obs_fold)), to_string));
+
 /*
 
 
      header-field   = field-name ":" OWS field-value OWS
 
-     field-name     = token
      field-value    = *( field-content / obs-fold )
 
 
-     obs-fold       = CRLF 1*( SP / HTAB ) ; obsolete line folding
 
 
      HTTP-message   = start-line ( header-field CRLF ) CRLF [ message-body ]
@@ -173,4 +177,12 @@ mod tests {
         assert_eq!(super::field_content(&b"a b"[..]), Done(&b""[..], &b"a b"[..]));
         assert_eq!(super::field_content(&b"a"[..]), Done(&b""[..], &b"a"[..]));
     }
+
+    #[test]
+    fn field_value() {
+        assert_eq!(super::field_value(&b"plain/text"[..]), Done(&b""[..], "plain/text".to_string()));
+        assert_eq!(super::field_value(&b"Spaces are allowed in the middle"[..]), Done(&b""[..], "Spaces are allowed in the middle".to_string()));
+        assert_eq!(super::field_value(&b"You can al\r\n so wrap onto new lines!"[..]), Done(&b""[..], "You can also wrap onto new lines!".to_string()));
+    }
+
 }
