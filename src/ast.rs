@@ -17,3 +17,9 @@ pub struct StatusLine<'a> {
     pub code: u8,
     pub description: &'a str,
 }
+
+#[derive(PartialEq, Debug)]
+pub enum StartLine<'a> {
+    RequestLine (RequestLine<'a>),
+    StatusLine (StatusLine<'a>),
+}

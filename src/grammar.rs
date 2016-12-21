@@ -60,10 +60,11 @@ named!(status_line <StatusLine>, do_parse!(
     (StatusLine { version: version, code: status, description: reason_phrase })
   ));
 
+
+// start-line     = request-line / status-line
+named!(start_line <StartLine>, alt!(map!(request_line, StartLine::RequestLine) | map!(status_line, StartLine::StatusLine)));
+
 /*
-start-line     = request-line / status-line
-
-
  HTTP-message   = start-line
                       *( header-field CRLF )
                       CRLF
@@ -111,7 +112,7 @@ mod tests {
 
     #[test]
     fn request_line() {
-        assert_eq!(super::request_line(&b"GET /where?q=now HTTP/1.1\r\n"[..]), Done(&b""[..], RequestLine{ method: "GET", request_target: "/where?q=now", version: HttpVersion { major: 1, minor: 1,}}));
+        assert_eq!(super::request_line(&b"GET /where?q=now HTTP/1.1\r\n"[..]), Done(&b""[..], RequestLine { method: "GET", request_target: "/where?q=now", version: HttpVersion { major: 1, minor: 1, } }));
     }
 
     #[test]
@@ -127,7 +128,12 @@ mod tests {
 
     #[test]
     fn status_line() {
-        assert_eq!(super::status_line(&b"HTTP/1.1 200 OK\r\n"[..]), Done(&b""[..], StatusLine{ version: HttpVersion { major: 1, minor: 1,}, code: 200, description: "OK"}));
+        assert_eq!(super::status_line(&b"HTTP/1.1 200 OK\r\n"[..]), Done(&b""[..], StatusLine { version: HttpVersion { major: 1, minor: 1, }, code: 200, description: "OK" }));
     }
 
+    #[test]
+    fn start_line() {
+        assert_eq!(super::start_line(&b"GET /where?q=now HTTP/1.1\r\n"[..]), Done(&b""[..], StartLine::RequestLine(RequestLine { method: "GET", request_target: "/where?q=now", version: HttpVersion { major: 1, minor: 1, } })));
+        assert_eq!(super::start_line(&b"HTTP/1.1 200 OK\r\n"[..]), Done(&b""[..], StartLine::StatusLine(StatusLine { version: HttpVersion { major: 1, minor: 1, }, code: 200, description: "OK" })));
+    }
 }
