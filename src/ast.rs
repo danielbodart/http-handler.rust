@@ -23,3 +23,9 @@ pub enum StartLine<'a> {
     RequestLine (RequestLine<'a>),
     StatusLine (StatusLine<'a>),
 }
+
+#[derive(PartialEq, Debug)]
+pub struct HttpMessage<'a> {
+    pub start_line: StartLine<'a>,
+    pub headers: Vec<(&'a str, String)>,
+}

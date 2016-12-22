@@ -28,6 +28,11 @@ named!(htab, tag!("\t"));
 named!(vchar, char_predicate!(range(0x21,0x7E)));
 // obs-text       = %x80-FF ; obsolete text
 named!(obs_text, char_predicate!(range(0x80,0xFF)));
+// OWS            = *( SP / HTAB ) ; optional whitespace
+named!(ows, map!(many0!(alt!(space | htab)), join_vec));
+// RWS            = 1*( SP / HTAB ) ; required whitespace
+named!(rws, map!(many1!(alt!(space | htab)), join_vec));
+// BWS            = OWS ; "bad" whitespace
 
 // TODO: full impl
 named!(request_target <&str>, map_res!(is_not!(" "), str::from_utf8));
@@ -83,18 +88,24 @@ named!(field_content, do_parse!(
   ));
 
 // obs-fold       = CRLF 1*( SP / HTAB ) ; obsolete line folding
-named!(obs_fold, do_parse!( crlf >> spaces >> (&b""[..]) ));
+named!(obs_fold, do_parse!( crlf >> spaces >> (Default::default()) ));
 
 // field-value    = *( field-content / obs-fold )
 named!(field_value <String>, map_res!(many0!(alt!(field_content | obs_fold)), to_string));
 
-/*
+// header-field   = field-name ":" OWS field-value OWS
+named!(header_field <(&str, String)>, do_parse!(
+    name:field_name >> tag!(":") >> ows >> value:field_value >> ows >>
+    ((name, value))
+  ));
 
 
-     header-field   = field-name ":" OWS field-value OWS
 
-     HTTP-message   = start-line ( header-field CRLF ) CRLF [ message-body ]
-*/
+// HTTP-message = start-line *( header-field CRLF ) CRLF [ message-body ]
+named!(http_message <HttpMessage> , do_parse!(
+    start_line:start_line >> headers:many0!(terminated!(header_field, crlf)) >> crlf >>
+    (HttpMessage { start_line:start_line, headers:headers})
+  ));
 
 #[cfg(test)]
 mod tests {
@@ -180,4 +191,23 @@ mod tests {
         assert_eq!(super::field_value(&b"You can al\r\n so wrap onto new lines!"[..]), Done(&b""[..], "You can also wrap onto new lines!".to_string()));
     }
 
+    #[test]
+    fn header_field() {
+        assert_eq!(super::header_field(&b"Content-Type:plain/text"[..]), Done(&b""[..], ("Content-Type", "plain/text".to_string())));
+        assert_eq!(super::header_field(&b"Content-Type: plain/text"[..]), Done(&b""[..], ("Content-Type", "plain/text".to_string())));
+        assert_eq!(super::header_field(&b"Content-Type: plain/text "[..]), Done(&b""[..], ("Content-Type", "plain/text".to_string())));
+        assert_eq!(super::header_field(&b"Content-Type: plain/\r\n text "[..]), Done(&b""[..], ("Content-Type", "plain/text".to_string())));
+    }
+
+    #[test]
+    fn http_message() {
+        assert_eq!(super::http_message(&b"GET /where?q=now HTTP/1.1\r\nContent-Type:plain/text\r\n\r\n"[..]), Done(&b""[..], HttpMessage {
+            start_line: StartLine::RequestLine(RequestLine { method: "GET", request_target: "/where?q=now", version: HttpVersion { major: 1, minor: 1, } }),
+            headers: vec!(("Content-Type", "plain/text".to_string()))
+        }));
+        assert_eq!(super::http_message(&b"HTTP/1.1 200 OK\r\nContent-Type:plain/text\r\n\r\n"[..]), Done(&b""[..], HttpMessage {
+            start_line: StartLine::StatusLine(StatusLine { version: HttpVersion { major: 1, minor: 1, }, code: 200, description: "OK" }),
+            headers: vec!(("Content-Type", "plain/text".to_string()))
+        }));
+    }
 }

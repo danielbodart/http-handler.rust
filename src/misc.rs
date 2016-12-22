@@ -11,6 +11,9 @@ pub fn join_slice<'a>(slice1: &'a [u8], slice2: &'a [u8]) -> &'a [u8] {
 }
 
 pub fn join_vec<'a>(vec: Vec<&'a [u8]>) -> &'a [u8] {
+    if vec.is_empty() {
+        return Default::default();
+    }
     let mut it = vec.into_iter();
     it.next().map(|first| it.fold(first, join_slice)).unwrap()
 }
