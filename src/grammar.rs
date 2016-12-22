@@ -5,7 +5,6 @@ use std::{str};
 
 use misc::*;
 use ast::*;
-use api::*;
 use predicates::*;
 
 // HTTP-name     = %x48.54.54.50 ; "HTTP", case-sensitive
