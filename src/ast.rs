@@ -62,7 +62,7 @@ impl<'a> fmt::Display for Headers<'a> {
         let mut result = String::new();
 
         for &(name, ref value) in &self.0[0..self.0.len()] {
-            result.push_str(format!("{}:{}\r\n", name, value).as_str());
+            result.push_str(format!("{}: {}\r\n", name, value).as_str());
         }
 
         write!(format, "{}", result)
@@ -143,7 +143,7 @@ mod tests {
 
     #[test]
     fn headers_display() {
-        assert_eq!(format!("{}", Headers(vec!(("Content-Type", "plain/text".to_string()), ("Content-Length", "3".to_string())))), "Content-Type:plain/text\r\nContent-Length:3\r\n");
+        assert_eq!(format!("{}", Headers(vec!(("Content-Type", "plain/text".to_string()), ("Content-Length", "3".to_string())))), "Content-Type: plain/text\r\nContent-Length: 3\r\n");
     }
 
     #[test]
@@ -158,7 +158,7 @@ mod tests {
             start_line: StartLine::StatusLine(StatusLine { version: HttpVersion { major: 1, minor: 1, }, code: 200, description: "OK" }),
             headers: Headers(vec!(("Content-Type", "plain/text".to_string()), ("Content-Length", "3".to_string()))),
             body: MessageBody::Slice(&b"abc"[..]),
-        }), "HTTP/1.1 200 OK\r\nContent-Type:plain/text\r\nContent-Length:3\r\n\r\nabc");
+        }), "HTTP/1.1 200 OK\r\nContent-Type: plain/text\r\nContent-Length: 3\r\n\r\nabc");
     }
 
 }
