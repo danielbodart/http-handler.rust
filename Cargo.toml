@@ -9,5 +9,13 @@ repository = "https://github.com/danielbodart/http-handler.rust.git"
 readme = "README.md"
 license = "Apache-2.0"
 
+[lib]
+name = "http_handler"
+path = "src/lib.rs"
+
+[[bin]]
+name = "http_handler"
+path = "src/main.rs"
+
 [dependencies]
 nom = { version = "2.0.1", features = ["verbose-errors"] }

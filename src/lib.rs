@@ -5,3 +5,4 @@
 #[macro_use] pub mod predicates;
 #[allow(dead_code)] pub mod grammar;
 pub mod ast;
+pub mod api;

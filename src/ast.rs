@@ -27,7 +27,7 @@ pub enum StartLine<'a> {
 #[derive(PartialEq, Debug)]
 pub struct HttpMessage<'a> {
     pub start_line: StartLine<'a>,
-    pub headers: Vec<(&'a str, String)>,
+    pub headers: Headers<'a>,
     pub body: MessageBody<'a>,
 }
 
@@ -37,6 +37,5 @@ pub enum MessageBody<'a> {
     Slice(&'a [u8]),
 }
 
-
-
-
+#[derive(PartialEq, Debug)]
+pub struct Headers<'a> (pub Vec<(&'a str, String)>);
