@@ -1,6 +1,7 @@
 extern crate nom;
 
-use nom::{is_digit, is_alphabetic};
+use nom::{is_digit, is_alphabetic, IResult};
+use std::ascii::AsciiExt;
 use std::{str};
 
 use misc::*;
@@ -99,12 +100,32 @@ named!(header_field <(&str, String)>, do_parse!(
     ((name, value))
   ));
 
+fn get<'a>(headers: &'a Vec<(&str, String)>, name:&str) -> Option<&'a str> {
+    headers.into_iter()
+        .find(|&&(key,_)| name.eq_ignore_ascii_case(key))
+        .map(|&(_, ref value)| value.as_str())
+}
+
+pub fn message_body<'a>(slice: &'a [u8], headers: &Vec<(&str, String)>) -> IResult<&'a [u8], MessageBody<'a>> {
+    let o: Option<u64> = get(headers, "Content-Length").and_then(|value| value.parse::<u64>().ok());
+    let length: u64 = o.unwrap_or(0u64);
+    if length == 0 {
+        IResult::Done(slice, MessageBody::None)
+    } else {
+        let result = take!(slice, length);
+        match result {
+            IResult::Done(rest, body) => IResult::Done(rest, MessageBody::Slice(body)),
+            IResult::Error(e) => IResult::Error(e),
+            IResult::Incomplete(n) => IResult::Incomplete(n),
+        }
+    }
+}
 
 
 // HTTP-message = start-line *( header-field CRLF ) CRLF [ message-body ]
 named!(http_message <HttpMessage> , do_parse!(
-    start_line:start_line >> headers:many0!(terminated!(header_field, crlf)) >> crlf >>
-    (HttpMessage { start_line:start_line, headers:headers})
+    start_line:start_line >> headers:many0!(terminated!(header_field, crlf)) >> crlf >> body:apply!(message_body, &headers) >>
+    (HttpMessage { start_line:start_line, headers:headers, body:body})
   ));
 
 #[cfg(test)]
@@ -203,11 +224,18 @@ mod tests {
     fn http_message() {
         assert_eq!(super::http_message(&b"GET /where?q=now HTTP/1.1\r\nContent-Type:plain/text\r\n\r\n"[..]), Done(&b""[..], HttpMessage {
             start_line: StartLine::RequestLine(RequestLine { method: "GET", request_target: "/where?q=now", version: HttpVersion { major: 1, minor: 1, } }),
-            headers: vec!(("Content-Type", "plain/text".to_string()))
+            headers: vec!(("Content-Type", "plain/text".to_string())),
+            body: MessageBody::None,
         }));
         assert_eq!(super::http_message(&b"HTTP/1.1 200 OK\r\nContent-Type:plain/text\r\n\r\n"[..]), Done(&b""[..], HttpMessage {
             start_line: StartLine::StatusLine(StatusLine { version: HttpVersion { major: 1, minor: 1, }, code: 200, description: "OK" }),
-            headers: vec!(("Content-Type", "plain/text".to_string()))
+            headers: vec!(("Content-Type", "plain/text".to_string())),
+            body: MessageBody::None,
+        }));
+        assert_eq!(super::http_message(&b"HTTP/1.1 200 OK\r\nContent-Type:plain/text\r\nContent-Length:3\r\n\r\nabc"[..]), Done(&b""[..], HttpMessage {
+            start_line: StartLine::StatusLine(StatusLine { version: HttpVersion { major: 1, minor: 1, }, code: 200, description: "OK" }),
+            headers: vec!(("Content-Type", "plain/text".to_string()), ("Content-Length", "3".to_string())),
+            body: MessageBody::Slice(&b"abc"[..]),
         }));
     }
 }

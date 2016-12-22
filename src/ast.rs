@@ -28,4 +28,15 @@ pub enum StartLine<'a> {
 pub struct HttpMessage<'a> {
     pub start_line: StartLine<'a>,
     pub headers: Vec<(&'a str, String)>,
+    pub body: MessageBody<'a>,
 }
+
+#[derive(PartialEq, Debug)]
+pub enum MessageBody<'a> {
+    None,
+    Slice(&'a [u8]),
+}
+
+
+
+
