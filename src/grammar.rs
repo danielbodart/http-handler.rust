@@ -106,9 +106,14 @@ fn get<'a>(headers: &'a Vec<(&str, String)>, name:&str) -> Option<&'a str> {
         .map(|&(_, ref value)| value.as_str())
 }
 
+fn content_length(headers: &Vec<(&str, String)>) -> u64 {
+    get(headers, "Content-Length").
+        and_then(|value| value.parse::<u64>().ok()).
+        unwrap_or(0u64)
+}
+
 pub fn message_body<'a>(slice: &'a [u8], headers: &Vec<(&str, String)>) -> IResult<&'a [u8], MessageBody<'a>> {
-    let o: Option<u64> = get(headers, "Content-Length").and_then(|value| value.parse::<u64>().ok());
-    let length: u64 = o.unwrap_or(0u64);
+    let length = content_length(headers);
     if length == 0 {
         IResult::Done(slice, MessageBody::None)
     } else {
