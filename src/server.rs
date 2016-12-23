@@ -14,10 +14,10 @@ use ast::*;
 
 pub trait Process<E> where Self: std::marker::Sized, E: std::error::Error {
     fn new(args: Vec<String>, env: HashMap<String, String>) -> Self;
-    fn run(&self) -> Result<i32, E>;
+    fn run(&mut self) -> Result<i32, E>;
 
     fn process() {
-        let p = Self::new(Vec::from_iter(env::args()), HashMap::from_iter(env::vars()));
+        let mut p = Self::new(Vec::from_iter(env::args()), HashMap::from_iter(env::vars()));
         process::exit(match p.run() {
             Result::Ok(code) => code,
             Result::Err(error) => {
@@ -39,15 +39,18 @@ impl Server {}
 impl Process<Error> for Server {
     fn new(args: Vec<String>, env: HashMap<String, String>) -> Server {
         assert_eq!(args.len(), 1);
+
         Server {
             port: env.get("PORT").and_then(|value| value.parse().ok()).unwrap_or(8080),
-            host: env.get("HOST").unwrap_or(&"127.0.0.1".to_string()).clone()
+            host: env.get("HOST").unwrap_or(&"0.0.0.0".to_string()).clone(),
         }
     }
-    fn run(&self) -> Result<i32, Error> {
-        let host = format!("{}:{}", self.host, self.port);
-        let listener = try!(TcpListener::bind(host.as_str()));
-        println!("listening on http://{}/", host);
+    fn run(&mut self) -> Result<i32, Error> {
+        let authority = (self.host.as_str(), self.port);
+        let listener:TcpListener = try!(TcpListener::bind(authority));
+        self.port = try!(listener.local_addr()).port();
+        println!("listening on http://{}:{}/", self.host, self.port);
+
         for stream in listener.incoming() {
             thread::spawn(|| {
                 let mut buffer: [u8; 4096] = [0; 4096];
