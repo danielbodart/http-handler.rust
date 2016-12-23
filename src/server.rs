@@ -33,7 +33,11 @@ pub struct Server {
     host: String,
 }
 
-impl Server {}
+impl Server {
+    //    fn request(&mut read:Read) -> Result<HttpMessage, Error> {
+    //
+    //    }
+}
 
 
 impl Process<Error> for Server {
@@ -47,7 +51,7 @@ impl Process<Error> for Server {
     }
     fn run(&mut self) -> Result<i32, Error> {
         let authority = (self.host.as_str(), self.port);
-        let listener:TcpListener = try!(TcpListener::bind(authority));
+        let listener: TcpListener = try!(TcpListener::bind(authority));
         self.port = try!(listener.local_addr()).port();
         println!("listening on http://{}:{}/", self.host, self.port);
 
@@ -56,20 +60,52 @@ impl Process<Error> for Server {
                 let mut buffer: [u8; 4096] = [0; 4096];
                 let mut stream: TcpStream = stream.unwrap();
                 let read = stream.read(&mut buffer[..]).unwrap();
-                if let IResult::Done(_, request) = http_message(&buffer[..read]) {
-                    let response = HttpMessage {
-                        start_line: StartLine::StatusLine(StatusLine { version: HttpVersion { major: 1, minor: 1, }, code: 200, description: "OK" }),
-                        headers: Headers(vec!(("Content-Type", "text/plain".to_string()), ("Content-Length", "5".to_string()))),
-                        body: MessageBody::Slice(&b"Hello"[..]),
-                    };
-                    let text = format!("{}", response);
-                    print!("{}{}\n\n\n", request, text);
-                    let bytes = text.as_bytes();
-                    let wrote = stream.write(bytes).unwrap();
-                    assert_eq!(bytes.len(), wrote);
+                match http_message(&buffer[..read]) {
+                    IResult::Done(_, request) => {
+                        let mut handler = LogHandler{handler:TestHandler{}};
+                        let response = handler.handle(&request);
+                        let text = format!("{}", response);
+                        let bytes = text.as_bytes();
+                        let wrote = stream.write(bytes).unwrap();
+                        assert_eq!(bytes.len(), wrote);
+                    },
+                    IResult::Incomplete(needed) => {
+                        println!("Incomplete need {:?}", needed);
+                    },
+                    IResult::Error(err) => {
+                        println!("Error {}", err);
+                    },
                 }
             });
         }
         Ok(0)
+    }
+}
+
+trait HttpHandler{
+    fn handle(&mut self, request: &HttpMessage) -> HttpMessage;
+}
+
+struct TestHandler {}
+
+impl HttpHandler for TestHandler {
+    fn handle(&mut self, request: &HttpMessage) -> HttpMessage {
+        HttpMessage {
+            start_line: StartLine::StatusLine(StatusLine { version: HttpVersion { major: 1, minor: 1, }, code: 200, description: "OK" }),
+            headers: Headers(vec!(("Content-Type", "text/plain".to_string()), ("Content-Length", "5".to_string()))),
+            body: MessageBody::Slice(&b"Hello"[..]),
+        }
+    }
+}
+
+struct LogHandler<H> where H: HttpHandler {
+    handler: H,
+}
+
+impl <H> HttpHandler for LogHandler<H> where H: HttpHandler {
+    fn handle(&mut self, request: &HttpMessage) -> HttpMessage {
+        let response = self.handler.handle(request);
+        print!("{}{}\n\n\n", request, response);
+        response
     }
 }
