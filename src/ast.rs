@@ -78,7 +78,7 @@ impl<'a> Headers<'a> {
 
     pub fn content_length(&self) -> u64 {
         self.get("Content-Length").
-            and_then(|value| value.parse::<u64>().ok()).
+            and_then(|value| value.parse().ok()).
             unwrap_or(0u64)
     }
 }
