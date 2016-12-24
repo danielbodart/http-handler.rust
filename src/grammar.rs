@@ -104,8 +104,7 @@ pub fn message_body<'a>(slice: &'a [u8], headers: &Headers<'a>) -> IResult<&'a [
     if length == 0 {
         IResult::Done(slice, MessageBody::None)
     } else {
-        let result = take!(slice, length);
-        match result {
+        match take!(slice, length) {
             IResult::Done(rest, body) => IResult::Done(rest, MessageBody::Slice(body)),
             IResult::Error(e) => IResult::Error(e),
             IResult::Incomplete(n) => IResult::Incomplete(n),

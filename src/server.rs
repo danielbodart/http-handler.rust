@@ -5,28 +5,14 @@ use std::env;
 use std::iter::FromIterator;
 use std::collections::HashMap;
 use std::process;
-use std::io::{Error, Read, Write};
+use std::io::{Error, Read, Write, ErrorKind};
 use std::net::{TcpStream, TcpListener};
 use std::thread;
 use nom::IResult;
 use grammar::http_message;
 use ast::*;
-
-pub trait Process<E> where Self: std::marker::Sized, E: std::error::Error {
-    fn new(args: Vec<String>, env: HashMap<String, String>) -> Self;
-    fn run(&mut self) -> Result<i32, E>;
-
-    fn process() {
-        let mut p = Self::new(Vec::from_iter(env::args()), HashMap::from_iter(env::vars()));
-        process::exit(match p.run() {
-            Result::Ok(code) => code,
-            Result::Err(error) => {
-                println!("{}", error);
-                1
-            }
-        })
-    }
-}
+use api::{ToWrite, HttpHandler};
+use process::Process;
 
 pub struct Server {
     port: u16,
@@ -34,9 +20,42 @@ pub struct Server {
 }
 
 impl Server {
-    //    fn request(&mut read:Read) -> Result<HttpMessage, Error> {
-    //
-    //    }
+    fn port(env: &HashMap<String, String>) -> u16 {
+        env.get("PORT").and_then(|value| value.parse().ok()).unwrap_or(8080)
+    }
+
+    fn host(env: &HashMap<String, String>) -> String {
+        env.get("HOST").unwrap_or(&"0.0.0.0".to_string()).clone()
+    }
+
+    fn listen(&mut self) -> Result<TcpListener, Error> {
+        let authority = (self.host.as_str(), self.port);
+        let listener: TcpListener = try!(TcpListener::bind(authority));
+        self.port = try!(listener.local_addr()).port();
+        println!("listening on http://{}:{}/", self.host, self.port);
+        Ok(listener)
+    }
+
+    fn read<'a, R>(read: &mut R, buffer: &'a mut [u8]) -> Result<HttpMessage<'a>, Error>
+        where R: Read + Sized {
+        let read = read.read(&mut buffer[..]).unwrap();
+        match http_message(&buffer[..read]) {
+            IResult::Done(_, request) => {
+                Ok(request)
+            },
+            IResult::Incomplete(needed) => {
+                Err(Error::new(ErrorKind::Other, format!("Incomplete need {:?}", needed)))
+            },
+            IResult::Error(err) => {
+                Err(Error::new(ErrorKind::Other, format!("Error {}", err)))
+            },
+        }
+    }
+
+    fn write<'a, W, H>(write: &mut W, handler: &mut H, request:&HttpMessage<'a>) where W: Write + Sized, H: HttpHandler + Sized {
+        let response = handler.handle(&request);
+        response.to_write(write);
+    }
 }
 
 
@@ -45,36 +64,25 @@ impl Process<Error> for Server {
         assert_eq!(args.len(), 1);
 
         Server {
-            port: env.get("PORT").and_then(|value| value.parse().ok()).unwrap_or(8080),
-            host: env.get("HOST").unwrap_or(&"0.0.0.0".to_string()).clone(),
+            port: Server::port(&env),
+            host: Server::host(&env),
         }
     }
     fn run(&mut self) -> Result<i32, Error> {
-        let authority = (self.host.as_str(), self.port);
-        let listener: TcpListener = try!(TcpListener::bind(authority));
-        self.port = try!(listener.local_addr()).port();
-        println!("listening on http://{}:{}/", self.host, self.port);
+        let listener = try!(self.listen());
 
         for stream in listener.incoming() {
             thread::spawn(|| {
-                let mut buffer: [u8; 4096] = [0; 4096];
                 let mut stream: TcpStream = stream.unwrap();
-                let read = stream.read(&mut buffer[..]).unwrap();
-                match http_message(&buffer[..read]) {
-                    IResult::Done(_, request) => {
-                        let mut handler = LogHandler{handler:TestHandler{}};
-                        let response = handler.handle(&request);
-                        let text = format!("{}", response);
-                        let bytes = text.as_bytes();
-                        let wrote = stream.write(bytes).unwrap();
-                        assert_eq!(bytes.len(), wrote);
+                let mut buffer: [u8; 4096] = [0; 4096];
+                match Server::read(&mut stream, &mut buffer) {
+                    Ok(request) => {
+                        let mut handler = LogHandler { handler: TestHandler {} };
+                        Server::write(&mut stream, &mut handler, &request)
                     },
-                    IResult::Incomplete(needed) => {
-                        println!("Incomplete need {:?}", needed);
-                    },
-                    IResult::Error(err) => {
-                        println!("Error {}", err);
-                    },
+                    Err(error) => {
+                        println!("{}", error)
+                    }
                 }
             });
         }
@@ -82,9 +90,6 @@ impl Process<Error> for Server {
     }
 }
 
-trait HttpHandler{
-    fn handle(&mut self, request: &HttpMessage) -> HttpMessage;
-}
 
 struct TestHandler {}
 
@@ -102,7 +107,7 @@ struct LogHandler<H> where H: HttpHandler {
     handler: H,
 }
 
-impl <H> HttpHandler for LogHandler<H> where H: HttpHandler {
+impl<H> HttpHandler for LogHandler<H> where H: HttpHandler {
     fn handle(&mut self, request: &HttpMessage) -> HttpMessage {
         let response = self.handler.handle(request);
         print!("{}{}\n\n\n", request, response);

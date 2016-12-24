@@ -6,4 +6,5 @@
 #[allow(dead_code)] pub mod grammar;
 pub mod ast;
 pub mod api;
+pub mod process;
 pub mod server;

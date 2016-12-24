@@ -1,5 +1,7 @@
 use std::ascii::AsciiExt;
 use std::{fmt, str};
+use std::io::{Write, Result};
+use api::ToWrite;
 
 #[derive(PartialEq, Debug)]
 pub struct HttpVersion {
@@ -114,6 +116,16 @@ pub struct HttpMessage<'a> {
 impl<'a> fmt::Display for HttpMessage<'a> {
     fn fmt(&self, format: &mut fmt::Formatter) -> fmt::Result {
         write!(format, "{}{}\r\n{}", self.start_line, self.headers, self.body)
+    }
+}
+
+impl<'a> ToWrite for HttpMessage<'a> {
+    fn to_write(&self, write: &mut Write) -> Result<usize> {
+        let text = format!("{}", self);
+        let bytes = text.as_bytes();
+        let wrote = try!(write.write(bytes));
+        assert_eq!(bytes.len(), wrote);
+        Ok(wrote)
     }
 }
 
