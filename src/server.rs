@@ -1,10 +1,7 @@
 extern crate nom;
 extern crate std;
 
-use std::env;
-use std::iter::FromIterator;
 use std::collections::HashMap;
-use std::process;
 use std::io::{Error, Read, Write, ErrorKind};
 use std::net::{TcpStream, TcpListener};
 use std::thread;
