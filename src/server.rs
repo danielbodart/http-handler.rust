@@ -4,7 +4,7 @@ extern crate std;
 use std::collections::HashMap;
 use std::io::{Error, Read, Write};
 use std::net::{TcpStream, TcpListener};
-use std::thread;
+use std::{thread, str};
 use nom::IResult;
 use grammar::http_message;
 use ast::*;
@@ -36,10 +36,13 @@ impl Server {
 
     fn read<'a, R>(read: &mut R, buffer: &'a mut Buffer) -> Result<HttpMessage<'a>, usize>
         where R: Read + Sized {
-        let read = read.read(buffer.as_write()).unwrap();
-        buffer.write_position(read);
-        match http_message(buffer.as_read()) {
+        let read = buffer.from(read).unwrap();
+        println!("buffer: {:?}", buffer);
+        let reader = buffer.as_read();
+        println!("Reader: {}", str::from_utf8(reader).unwrap());
+        match http_message(reader) {
             IResult::Done(_, request) => {
+                // TODO work out how to update buffer.read_position
                 Ok(request)
             },
             _ => {
@@ -49,7 +52,8 @@ impl Server {
     }
 
     #[allow(unused_must_use)]
-    fn write<'a, W, H>(write: &mut W, handler: &mut H, request: &HttpMessage<'a>) where W: Write + Sized, H: HttpHandler + Sized {
+    fn write<'a, W, H>(write: &mut W, handler: &mut H, request: &HttpMessage<'a>)
+        where W: Write + Sized, H: HttpHandler + Sized {
         let response = handler.handle(&request);
         response.to_write(write);
     }
@@ -115,49 +119,23 @@ impl<H> HttpHandler for LogHandler<H> where H: HttpHandler {
 
 #[cfg(test)]
 mod tests {
-    use misc::*;
     use io::*;
     use grammar::*;
-    use std::io::{Read, Result};
     use std::str;
 
     #[test]
     fn read_supports_fragmentation() {
         let request = b"GET / HTTP/1.1\r\n\r\n";
         let mut buffer = Buffer::new(32);
+        let mut read = Fragmented::new(request);
 
-        struct Fragmented<'a> {
-            data: Vec<&'a [u8]>,
-            count: usize,
-        }
-
-        impl<'a> Read for Fragmented<'a> {
-            fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-                if self.data.len() == self.count {
-                    return Ok(0)
-                }
-                let fragment = self.data[self.count];
-                let length = fragment.len();
-                buf[..length].copy_from_slice(fragment);
-
-                self.count += 1;
-                Ok(length)
-            }
-        }
-
-        let mut read = Fragmented {
-            data: vec!(&request[..8], &request[8..]),
-            count: 0,
-        };
-
-        assert_eq!(is_adjacent(&request[..8], &request[8..]), true);
-        assert_eq!(read.count, 0);
+        assert_eq!(read.count(), 0);
         println!("Buffer: {}", str::from_utf8(buffer.as_read()).unwrap());
-        assert_eq!(super::Server::read(&mut read, &mut buffer).unwrap_err(), 8);
-        assert_eq!(read.count, 1);
+        assert_eq!(super::Server::read(&mut read, &mut buffer).unwrap_err(), 9);
+        assert_eq!(read.count(), 1);
         println!("Buffer: {}", str::from_utf8(buffer.as_read()).unwrap());
         assert_eq!(super::Server::read(&mut read, &mut buffer).unwrap(), http_message(request).unwrap().1);
-        assert_eq!(read.count, 2);
+        assert_eq!(read.count(), 2);
         println!("Buffer: {}", str::from_utf8(buffer.as_read()).unwrap());
     }
 }
