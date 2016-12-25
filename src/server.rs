@@ -2,7 +2,7 @@ extern crate nom;
 extern crate std;
 
 use std::collections::HashMap;
-use std::io::{Error, Read, Write, ErrorKind};
+use std::io::{Error, Read, Write};
 use std::net::{TcpStream, TcpListener};
 use std::thread;
 use nom::IResult;
@@ -10,6 +10,7 @@ use grammar::http_message;
 use ast::*;
 use api::{ToWrite, HttpHandler};
 use process::Process;
+use io::Buffer;
 
 pub struct Server {
     port: u16,
@@ -33,22 +34,21 @@ impl Server {
         Ok(listener)
     }
 
-    fn read<'a, R>(read: &mut R, buffer: &'a mut [u8]) -> Result<HttpMessage<'a>, Error>
+    fn read<'a, R>(read: &mut R, buffer: &'a mut Buffer) -> Result<HttpMessage<'a>, usize>
         where R: Read + Sized {
-        let read = read.read(&mut buffer[..]).unwrap();
-        match http_message(&buffer[..read]) {
+        let read = read.read(buffer.as_write()).unwrap();
+        buffer.write_position(read);
+        match http_message(buffer.as_read()) {
             IResult::Done(_, request) => {
                 Ok(request)
             },
-            IResult::Incomplete(needed) => {
-                Err(Error::new(ErrorKind::Other, format!("Incomplete need {:?}", needed)))
-            },
-            IResult::Error(err) => {
-                Err(Error::new(ErrorKind::Other, format!("Error {}", err)))
+            _ => {
+                Err(read)
             },
         }
     }
 
+    #[allow(unused_must_use)]
     fn write<'a, W, H>(write: &mut W, handler: &mut H, request: &HttpMessage<'a>) where W: Write + Sized, H: HttpHandler + Sized {
         let response = handler.handle(&request);
         response.to_write(write);
@@ -71,14 +71,14 @@ impl Process<Error> for Server {
         for stream in listener.incoming() {
             thread::spawn(|| {
                 let mut stream: TcpStream = stream.unwrap();
-                let mut buffer: [u8; 4096] = [0; 4096];
-                match Server::read(&mut stream, &mut buffer) {
-                    Ok(request) => {
-                        let mut handler = LogHandler { handler: TestHandler {} };
-                        Server::write(&mut stream, &mut handler, &request)
-                    },
-                    Err(error) => {
-                        println!("{}", error)
+                let mut buffer = Buffer::new(4096);
+                loop {
+                    match Server::read(&mut stream, &mut buffer) {
+                        Ok(request) => {
+                            let mut handler = LogHandler { handler: TestHandler {} };
+                            Server::write(&mut stream, &mut handler, &request);
+                        },
+                        Err(_) => {}
                     }
                 }
             });
@@ -90,6 +90,7 @@ impl Process<Error> for Server {
 
 struct TestHandler {}
 
+#[allow(unused_variables)]
 impl HttpHandler for TestHandler {
     fn handle(&mut self, request: &HttpMessage) -> HttpMessage {
         HttpMessage {
@@ -114,13 +115,16 @@ impl<H> HttpHandler for LogHandler<H> where H: HttpHandler {
 
 #[cfg(test)]
 mod tests {
-    use ast::*;
-    use std::io::{Read, Cursor, Result};
+    use misc::*;
+    use io::*;
+    use grammar::*;
+    use std::io::{Read, Result};
+    use std::str;
 
     #[test]
     fn read_supports_fragmentation() {
         let request = b"GET / HTTP/1.1\r\n\r\n";
-        let mut buffer: [u8; 32] = [0; 32];
+        let mut buffer = Buffer::new(32);
 
         struct Fragmented<'a> {
             data: Vec<&'a [u8]>,
@@ -133,22 +137,27 @@ mod tests {
                     return Ok(0)
                 }
                 let fragment = self.data[self.count];
-                buf[..fragment.len()].copy_from_slice(fragment);
+                let length = fragment.len();
+                buf[..length].copy_from_slice(fragment);
 
                 self.count += 1;
-                Ok(fragment.len())
+                Ok(length)
             }
         }
 
         let mut read = Fragmented {
-            data: vec!(&request[..7], &request[8..]),
+            data: vec!(&request[..8], &request[8..]),
             count: 0,
         };
 
-        assert_eq!(super::Server::read(&mut read, &mut buffer).unwrap(), HttpMessage {
-            start_line: StartLine::RequestLine(RequestLine { method: "GET", request_target: "/", version: HttpVersion { major: 1, minor: 1, } }),
-            headers: Headers(Vec::new()),
-            body: MessageBody::None,
-        });
+        assert_eq!(is_adjacent(&request[..8], &request[8..]), true);
+        assert_eq!(read.count, 0);
+        println!("Buffer: {}", str::from_utf8(buffer.as_read()).unwrap());
+        assert_eq!(super::Server::read(&mut read, &mut buffer).unwrap_err(), 8);
+        assert_eq!(read.count, 1);
+        println!("Buffer: {}", str::from_utf8(buffer.as_read()).unwrap());
+        assert_eq!(super::Server::read(&mut read, &mut buffer).unwrap(), http_message(request).unwrap().1);
+        assert_eq!(read.count, 2);
+        println!("Buffer: {}", str::from_utf8(buffer.as_read()).unwrap());
     }
 }

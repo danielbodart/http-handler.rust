@@ -2,11 +2,17 @@ use std::{slice, num, string};
 
 pub fn join_slice<'a>(slice1: &'a [u8], slice2: &'a [u8]) -> &'a [u8] {
     unsafe {
-        if slice2.as_ptr() == slice1.as_ptr().offset(slice1.len() as isize) {
+        if is_adjacent(slice1, slice2) {
             slice::from_raw_parts(slice1.as_ptr(), slice1.len() + slice2.len())
         } else {
             panic!("Can not join slices that are not next to each other");
         }
+    }
+}
+
+pub fn is_adjacent<'a>(slice1: &'a [u8], slice2: &'a [u8]) -> bool {
+    unsafe {
+        slice2.as_ptr() == slice1.as_ptr().offset(slice1.len() as isize)
     }
 }
 
