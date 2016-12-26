@@ -2,7 +2,7 @@ extern crate nom;
 extern crate std;
 
 use std::collections::HashMap;
-use std::io::{Error, Read, Write};
+use std::io::{Error, ErrorKind, Read, Write, Result};
 use std::net::{TcpStream, TcpListener};
 use std::{thread, str};
 use nom::IResult;
@@ -26,7 +26,7 @@ impl Server {
         env.get("HOST").unwrap_or(&"0.0.0.0".to_string()).clone()
     }
 
-    fn listen(&mut self) -> Result<TcpListener, Error> {
+    fn listen(&mut self) -> Result<TcpListener> {
         let authority = (self.host.as_str(), self.port);
         let listener: TcpListener = try!(TcpListener::bind(authority));
         self.port = try!(listener.local_addr()).port();
@@ -34,21 +34,21 @@ impl Server {
         Ok(listener)
     }
 
-    fn read<'a, R>(read: &mut R, buffer: &'a mut Buffer) -> Option<HttpMessage<'a>>
-        where R: Read + Sized {
-        buffer.from(read);
-        println!("buffer: {:?}", buffer);
-        let reader = buffer.as_read();
-        println!("Reader: {}", str::from_utf8(reader).unwrap());
-        match http_message(reader) {
-            IResult::Done(_, request) => {
-                // TODO work out how to update buffer.read_position
-                Some(request)
-            },
-            _ => {
-                None
-            },
-        }
+    fn read<R, F>(read: &mut R, buffer: &mut Buffer, mut fun: F) -> Result<()>
+        where R: Read + Sized, F: FnMut(&mut R, HttpMessage) -> () {
+        try!(buffer.from(read));
+        try!(buffer.read_from(|slice| {
+            match http_message(slice) {
+                IResult::Done(remainder, request) => {
+                    fun(read, request);
+                    Ok(slice.len() - remainder.len())
+                },
+                _ => {
+                    Err(Error::new(ErrorKind::Other, "Failed to read request"))
+                },
+            }
+        }));
+        Ok(())
     }
 
     #[allow(unused_must_use)]
@@ -69,7 +69,7 @@ impl Process<Error> for Server {
             host: Server::host(&env),
         }
     }
-    fn run(&mut self) -> Result<i32, Error> {
+    fn run(&mut self) -> Result<i32> {
         let listener = try!(self.listen());
 
         for stream in listener.incoming() {
@@ -77,10 +77,10 @@ impl Process<Error> for Server {
                 let mut stream: TcpStream = stream.unwrap();
                 let mut buffer = Buffer::new(4096);
                 loop {
-                    if let Some(request) = Server::read(&mut stream, &mut buffer) {
+                    Server::read(&mut stream, &mut buffer, |stream, request| {
                         let mut handler = LogHandler { handler: TestHandler {} };
-                        Server::write(&mut stream, &mut handler, &request);
-                    }
+                        Server::write(stream, &mut handler, &request);
+                    }).expect("Error while reading stream");
                 }
             });
         }
@@ -121,6 +121,7 @@ mod tests {
     use std::str;
 
     #[test]
+    #[allow(unused_variables)]
     fn read_supports_fragmentation() {
         let request = b"GET / HTTP/1.1\r\n\r\n";
         let mut buffer = Buffer::new(32);
@@ -128,14 +129,15 @@ mod tests {
 
         assert_eq!(read.count(), 0);
         assert_eq!(buffer.write_position, 0);
-        println!("Buffer: {}", str::from_utf8(buffer.as_read()).unwrap());
-        assert_eq!(super::Server::read(&mut read, &mut buffer), None);
+        assert_eq!(super::Server::read(&mut read, &mut buffer, |stream, message|{
+            panic!("Should never get here");
+        }).is_err(), true);
         assert_eq!(read.count(), 1);
         assert_eq!(buffer.write_position, 9);
-        println!("Buffer: {}", str::from_utf8(buffer.as_read()).unwrap());
-        assert_eq!(super::Server::read(&mut read, &mut buffer).unwrap(), http_message(request).unwrap().1);
+        assert_eq!(super::Server::read(&mut read, &mut buffer, |stream, message|{
+            assert_eq!(message, http_message(request).unwrap().1);
+        }).unwrap(), ());
         assert_eq!(read.count(), 2);
-        assert_eq!(buffer.write_position, 18);
-        println!("Buffer: {}", str::from_utf8(buffer.as_read()).unwrap());
+        assert_eq!(buffer.write_position, 0);
     }
 }

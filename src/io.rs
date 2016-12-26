@@ -27,18 +27,20 @@ impl Buffer {
         &self.value[self.read_position..self.write_position]
     }
 
-    pub fn increment_read(&mut self, value: usize) -> &mut Self {
+    pub fn increment_read(&mut self, value: usize) {
         self.read_position += value;
-        self
+        if self.read_position == self.write_position {
+            self.read_position = 0;
+            self.write_position = 0;
+        }
     }
 
     pub fn as_write(&mut self) -> &mut [u8] {
         &mut self.value[self.write_position..]
     }
 
-    pub fn increment_write(&mut self, value: usize) -> &mut Self {
+    pub fn increment_write(&mut self, value: usize) {
         self.write_position += value;
-        self
     }
 
     pub fn from<R>(&mut self, read: &mut R) -> Result<usize> where R: Read + Sized {
@@ -50,6 +52,15 @@ impl Buffer {
         let result = fun(self.as_write());
         if let Ok(count) = result {
             self.increment_write(count);
+        }
+        result
+    }
+
+    pub fn read_from<F>(&mut self, mut fun: F) -> Result<usize>
+        where F: FnMut(&[u8]) -> Result<usize> {
+        let result = fun(self.as_read());
+        if let Ok(count) = result {
+            self.increment_read(count);
         }
         result
     }
@@ -120,19 +131,35 @@ mod tests {
             slice[0] = 1;
             slice[1] = 2;
             Ok(2)
-        });
-        println!("{:?}", buffer);
+        }).expect("Could not write_into");
+        assert_eq!(buffer.read_position, 0);
+        assert_eq!(buffer.write_position, 2);
+
         buffer.write_into(|slice| {
             slice[0] = 3;
             slice[1] = 4;
             Ok(2)
-        });
-        println!("{:?}", buffer);
-        let read: &[u8] = buffer.as_read();
-        assert_eq!(read.len(), 4);
-        assert_eq!(read[0], 1);
-        assert_eq!(read[1], 2);
-        assert_eq!(read[2], 3);
-        assert_eq!(read[3], 4);
+        }).expect("Could not write_into");
+        assert_eq!(buffer.read_position, 0);
+        assert_eq!(buffer.write_position, 4);
+
+        buffer.read_from(|slice| {
+            assert_eq!(slice.len(), 4);
+            assert_eq!(slice[0], 1);
+            assert_eq!(slice[1], 2);
+            Ok(2)
+        }).expect("Could not read_from");
+        assert_eq!(buffer.read_position, 2);
+        assert_eq!(buffer.write_position, 4);
+
+        buffer.read_from(|slice| {
+            assert_eq!(slice.len(), 2);
+            assert_eq!(slice[0], 3);
+            assert_eq!(slice[1], 4);
+            Ok(2)
+        }).expect("Could not read_from");
+        assert_eq!(buffer.read_position, 0);
+        assert_eq!(buffer.write_position, 0);
+
     }
 }
