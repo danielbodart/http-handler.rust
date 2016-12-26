@@ -34,19 +34,19 @@ impl Server {
         Ok(listener)
     }
 
-    fn read<'a, R>(read: &mut R, buffer: &'a mut Buffer) -> Result<HttpMessage<'a>, usize>
+    fn read<'a, R>(read: &mut R, buffer: &'a mut Buffer) -> Option<HttpMessage<'a>>
         where R: Read + Sized {
-        let read = buffer.from(read).unwrap();
+        buffer.from(read);
         println!("buffer: {:?}", buffer);
         let reader = buffer.as_read();
         println!("Reader: {}", str::from_utf8(reader).unwrap());
         match http_message(reader) {
             IResult::Done(_, request) => {
                 // TODO work out how to update buffer.read_position
-                Ok(request)
+                Some(request)
             },
             _ => {
-                Err(read)
+                None
             },
         }
     }
@@ -77,12 +77,9 @@ impl Process<Error> for Server {
                 let mut stream: TcpStream = stream.unwrap();
                 let mut buffer = Buffer::new(4096);
                 loop {
-                    match Server::read(&mut stream, &mut buffer) {
-                        Ok(request) => {
-                            let mut handler = LogHandler { handler: TestHandler {} };
-                            Server::write(&mut stream, &mut handler, &request);
-                        },
-                        Err(_) => {}
+                    if let Some(request) = Server::read(&mut stream, &mut buffer) {
+                        let mut handler = LogHandler { handler: TestHandler {} };
+                        Server::write(&mut stream, &mut handler, &request);
                     }
                 }
             });
@@ -130,12 +127,15 @@ mod tests {
         let mut read = Fragmented::new(request);
 
         assert_eq!(read.count(), 0);
+        assert_eq!(buffer.write_position, 0);
         println!("Buffer: {}", str::from_utf8(buffer.as_read()).unwrap());
-        assert_eq!(super::Server::read(&mut read, &mut buffer).unwrap_err(), 9);
+        assert_eq!(super::Server::read(&mut read, &mut buffer), None);
         assert_eq!(read.count(), 1);
+        assert_eq!(buffer.write_position, 9);
         println!("Buffer: {}", str::from_utf8(buffer.as_read()).unwrap());
         assert_eq!(super::Server::read(&mut read, &mut buffer).unwrap(), http_message(request).unwrap().1);
         assert_eq!(read.count(), 2);
+        assert_eq!(buffer.write_position, 18);
         println!("Buffer: {}", str::from_utf8(buffer.as_read()).unwrap());
     }
 }
