@@ -122,22 +122,27 @@ mod tests {
 
     #[test]
     #[allow(unused_variables)]
+    #[allow(unused_must_use)]
     fn read_supports_fragmentation() {
-        let request = b"GET / HTTP/1.1\r\n\r\n";
-        let mut buffer = Buffer::new(32);
-        let mut read = Fragmented::new(request);
+        let get = "GET / HTTP/1.1\r\n\r\n";
+        let post = "POST /foo HTTP/1.1\r\n\r\n";
+        let put = "PUT /bar HTTP/1.1\r\n\r\n";
+        let option = "OPTION / HTTP/1.1\r\n\r\n";
+        let index = vec!(get, post, put, option);
+        let requests = format!("{}{}{}{}", get, post, put, option);
+        let data = requests.as_bytes();
+        let mut buffer = Buffer::new(data.len());
+        let mut read = Fragmented::new(data, 10);
+        let mut count = 0;
 
-        assert_eq!(read.count(), 0);
-        assert_eq!(buffer.write_position, 0);
-        assert_eq!(super::Server::read(&mut read, &mut buffer, |stream, message|{
-            panic!("Should never get here");
-        }).is_err(), true);
-        assert_eq!(read.count(), 1);
-        assert_eq!(buffer.write_position, 9);
-        assert_eq!(super::Server::read(&mut read, &mut buffer, |stream, message|{
-            assert_eq!(message, http_message(request).unwrap().1);
-        }).unwrap(), ());
-        assert_eq!(read.count(), 2);
-        assert_eq!(buffer.write_position, 0);
+        while count < index.len() {
+            super::Server::read(&mut read, &mut buffer, |stream, message|{
+                let http = index[count];
+                println!("{:?}", http);
+                assert_eq!(message, http_message(http.as_bytes()).unwrap().1);
+                count += 1;
+                println!("count {} len {}", count, index.len());
+            });
+        }
     }
 }

@@ -73,10 +73,18 @@ pub struct Fragmented<'a> {
 }
 
 impl<'a> Fragmented<'a> {
-    pub fn new(data: &'a [u8]) -> Fragmented<'a> {
-        let halfway = data.len() / 2;
+    pub fn new(data: &'a [u8], fragments: usize) -> Fragmented<'a> {
+        let size = data.len() / fragments;
+        let mut vec = Vec::with_capacity(size);
+        for i in 0..fragments {
+            let start = i * size;
+            let end = (i + 1) * size;
+            vec.push(&data[start..(end)]);
+        }
+        let last = fragments * size;
+        vec.push(&data[last..]);
         Fragmented {
-            data: vec!(&data[..halfway], &data[halfway..]),
+            data: vec,
             count: 0,
         }
     }
@@ -160,6 +168,5 @@ mod tests {
         }).expect("Could not read_from");
         assert_eq!(buffer.read_position, 0);
         assert_eq!(buffer.write_position, 0);
-
     }
 }
