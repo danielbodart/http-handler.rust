@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::path::{Path};
-use std::fs::{File, canonicalize};
+use std::fs::{File, Metadata, canonicalize};
 use std::io::{Error, ErrorKind, Write, Result};
 use std::fmt;
 use regex::Regex;
@@ -33,7 +33,10 @@ impl<'a> FileHandler<'a> {
             return Err(Error::new(ErrorKind::PermissionDenied, "Not allowed outside of base"));
         }
         let file: File = try!(File::open(&full_path));
-        let metadata = try!(file.metadata());
+        let metadata:Metadata = try!(file.metadata());
+        if metadata.is_dir() {
+            return Err(Error::new(ErrorKind::NotFound, "Path denotes a directory"));
+        }
         Ok(HttpMessage {
             start_line: StartLine::StatusLine(StatusLine { version: HttpVersion { major: 1, minor: 1, }, code: 200, description: "OK" }),
             headers: Headers(vec!(("Content-Type", "text/plain".to_string()), ("Content-Length", format!("{}", metadata.len())))),

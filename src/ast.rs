@@ -142,10 +142,10 @@ impl<'a> fmt::Debug for MessageBody<'a> {
 }
 
 impl<'a> WriteTo for MessageBody<'a> {
-    fn write_to(&mut self, write: &mut Write) -> Result<usize> {
+    fn write_to(&mut self, writer: &mut Write) -> Result<usize> {
         match *self {
             MessageBody::Reader(ref mut reader) => {
-                copy(reader, write).map(|c|{
+                copy(reader, writer).map(|c| {
                     if c > usize::MAX as u64 {
                         usize::MAX
                     } else {
@@ -154,10 +154,10 @@ impl<'a> WriteTo for MessageBody<'a> {
                 })
             },
             MessageBody::Vector(ref vector) => {
-                write.write(&vector[..])
+                writer.write(&vector[..])
             },
             MessageBody::Slice(ref slice) => {
-                write.write(&slice)
+                writer.write(&slice)
             },
             MessageBody::None => Ok(0),
         }
