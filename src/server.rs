@@ -129,7 +129,7 @@ mod tests {
         let put = "PUT /bar HTTP/1.1\r\n\r\n";
         let option = "OPTION / HTTP/1.1\r\n\r\n";
         let index = vec!(get, post, put, option);
-        let requests = format!("{}{}{}{}", get, post, put, option);
+        let requests = index.iter().fold(String::new(), |a, &v| a + v);
         let data = requests.as_bytes();
         let mut buffer = Buffer::new(data.len());
         let mut read = Fragmented::new(data, 10);
@@ -137,8 +137,7 @@ mod tests {
 
         while count < index.len() {
             super::Server::read(&mut read, &mut buffer, |stream, message|{
-                let http = index[count];
-                assert_eq!(message, http_message(http.as_bytes()).unwrap().1);
+                assert_eq!(message, http_message(index[count].as_bytes()).unwrap().1);
                 count += 1;
             });
         }
