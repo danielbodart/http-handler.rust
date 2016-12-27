@@ -138,10 +138,8 @@ mod tests {
         while count < index.len() {
             super::Server::read(&mut read, &mut buffer, |stream, message|{
                 let http = index[count];
-                println!("{:?}", http);
                 assert_eq!(message, http_message(http.as_bytes()).unwrap().1);
                 count += 1;
-                println!("count {} len {}", count, index.len());
             });
         }
     }
