@@ -2,14 +2,16 @@ use std::borrow::Cow;
 use std::path::{Path};
 use std::fs::{File, canonicalize};
 use std::io::{Error, ErrorKind, Read, Write, Result};
+use regex::Regex;
 use ast::*;
+
 
 pub trait HttpHandler {
     fn handle(&mut self, request: &HttpMessage) -> HttpMessage;
 }
 
 pub trait ToWrite {
-    fn to_write(&self, write:&mut Write) -> Result<usize>;
+    fn to_write(&self, write: &mut Write) -> Result<usize>;
 }
 
 pub struct FileHandler<'a> {
@@ -42,7 +44,7 @@ impl<'a> FileHandler<'a> {
     pub fn not_found(&self) -> HttpMessage {
         HttpMessage {
             start_line: StartLine::StatusLine(StatusLine { version: HttpVersion { major: 1, minor: 1, }, code: 404, description: "Not Found" }),
-            headers: Headers(vec!()),
+            headers: Headers(vec!(("Content-Length", "0".to_string()))),
             body: MessageBody::None,
         }
     }
@@ -50,9 +52,8 @@ impl<'a> FileHandler<'a> {
 
 impl<'a> HttpHandler for FileHandler<'a> {
     fn handle(&mut self, request: &HttpMessage) -> HttpMessage {
-        if let StartLine::RequestLine(RequestLine { method: "GET", request_target: path, version: _ }) = request.start_line {
-            // TODO parse URL correctly to extract path
-            return self.get(path).unwrap_or(self.not_found());
+        if let StartLine::RequestLine(RequestLine { method: "GET", request_target: uri, version: _ }) = request.start_line {
+            return self.get(Uri::parse(uri).path).unwrap_or(self.not_found());
         }
         self.not_found()
     }
@@ -62,10 +63,10 @@ pub struct LogHandler<H> where H: HttpHandler {
     handler: H,
 }
 
-impl <H> LogHandler<H> where H: HttpHandler {
-    pub fn new(handler:H) -> LogHandler<H> {
+impl<H> LogHandler<H> where H: HttpHandler {
+    pub fn new(handler: H) -> LogHandler<H> {
         LogHandler {
-            handler:handler,
+            handler: handler,
         }
     }
 }
@@ -75,5 +76,54 @@ impl<H> HttpHandler for LogHandler<H> where H: HttpHandler {
         let response = self.handler.handle(request);
         print!("{}{}\n\n\n", request, response);
         response
+    }
+}
+
+pub struct Uri<'a> {
+    pub scheme: &'a str,
+    pub authority: &'a str,
+    pub path: &'a str,
+    pub query: &'a str,
+    pub fragment: &'a str,
+}
+
+impl<'a> Uri<'a> {
+    pub fn parse(value: &'a str) -> Uri<'a> {
+        lazy_static! {
+            static ref RFC3986: Regex = Regex::new("^(?:([^:/?\\#]+):)?(?://([^/?\\#]*))?([^?\\#]*)(?:\\?([^\\#]*))?(?:\\#(.*))?").unwrap();
+        }
+
+        let result = RFC3986.captures(value).unwrap();
+        Uri {
+            scheme: result.at(1).unwrap_or(""),
+            authority: result.at(2).unwrap_or(""),
+            path: result.at(3).unwrap_or(""),
+            query: result.at(4).unwrap_or(""),
+            fragment: result.at(5).unwrap_or(""),
+        }
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn can_parse_uri() {
+        let uri = super::Uri::parse("http://authority/some/path?query=string#fragment");
+        assert_eq!(uri.scheme, "http");
+        assert_eq!(uri.authority, "authority");
+        assert_eq!(uri.path, "/some/path");
+        assert_eq!(uri.query, "query=string");
+        assert_eq!(uri.fragment, "fragment");
+    }
+
+    #[test]
+    fn supports_relative() {
+        let uri = super::Uri::parse("some/path");
+        assert_eq!(uri.scheme, "");
+        assert_eq!(uri.authority, "");
+        assert_eq!(uri.path, "some/path");
+        assert_eq!(uri.query, "");
+        assert_eq!(uri.fragment, "");
     }
 }

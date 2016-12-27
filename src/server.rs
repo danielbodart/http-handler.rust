@@ -43,8 +43,11 @@ impl Server {
                     fun(read, request);
                     Ok(slice.len() - remainder.len())
                 },
-                _ => {
-                    Err(Error::new(ErrorKind::Other, "Failed to read request"))
+                IResult::Incomplete(_) => {
+                    Ok(0)
+                },
+                IResult::Error(err) => {
+                    Err(Error::new(ErrorKind::Other, format!("{}", err)))
                 },
             }
         }));
@@ -78,7 +81,7 @@ impl Process<Error> for Server {
                 let mut buffer = Buffer::new(4096);
                 loop {
                     Server::read(&mut stream, &mut buffer, |stream, request| {
-                        let mut handler = LogHandler::new(FileHandler::new(std::env::current_dir().unwrap()));
+                        let mut handler = FileHandler::new(std::env::current_dir().unwrap());
                         Server::write(stream, &mut handler, &request);
                     }).expect("Error while reading stream");
                 }
