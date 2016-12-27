@@ -57,8 +57,8 @@ impl Server {
     #[allow(unused_must_use)]
     fn write<'a, W, H>(write: &mut W, handler: &mut H, request: &HttpMessage<'a>)
         where W: Write + Sized, H: HttpHandler + Sized {
-        let response = handler.handle(&request);
-        response.to_write(write);
+        let mut response = handler.handle(&request);
+        response.write_to(write);
     }
 }
 

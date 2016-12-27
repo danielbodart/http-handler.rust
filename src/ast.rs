@@ -1,7 +1,7 @@
 use std::ascii::AsciiExt;
-use std::{fmt, str};
-use std::io::{Write, Result};
-use api::ToWrite;
+use std::{fmt, str, usize};
+use std::io::{Read, Write, Result, copy};
+use api::WriteTo;
 
 #[derive(PartialEq, Debug)]
 pub struct HttpVersion {
@@ -85,16 +85,19 @@ impl<'a> Headers<'a> {
     }
 }
 
-#[derive(PartialEq, Debug)]
 pub enum MessageBody<'a> {
     None,
     Slice(&'a [u8]),
     Vector(Vec<u8>),
+    Reader(Box<Read>),
 }
 
-impl<'a> fmt::Display for MessageBody<'a> {
-    fn fmt(&self, format: &mut fmt::Formatter) -> fmt::Result {
+impl<'a> MessageBody<'a> {
+    fn format(&self, format: &mut fmt::Formatter) -> fmt::Result {
         match *self {
+            MessageBody::Reader(_) => {
+                format.write_str("streaming")
+            },
             MessageBody::Vector(ref vector) => {
                 if let Ok(result) = String::from_utf8(vector.clone()) {
                     write!(format, "{}", result)
@@ -114,6 +117,53 @@ impl<'a> fmt::Display for MessageBody<'a> {
     }
 }
 
+impl<'a> PartialEq for MessageBody<'a> {
+    fn eq(&self, other: &MessageBody) -> bool {
+        match (self, other) {
+            (&MessageBody::None, &MessageBody::None) => true,
+            (&MessageBody::Slice(ref slice_a), &MessageBody::Slice(ref slice_b)) => slice_a == slice_b,
+            (&MessageBody::Vector(ref vector_a), &MessageBody::Vector(ref vector_b)) => vector_a == vector_b,
+            (&MessageBody::Reader(_), &MessageBody::Reader(_)) => true,
+            _ => false
+        }
+    }
+}
+
+impl<'a> fmt::Display for MessageBody<'a> {
+    fn fmt(&self, format: &mut fmt::Formatter) -> fmt::Result {
+        self.format(format)
+    }
+}
+
+impl<'a> fmt::Debug for MessageBody<'a> {
+    fn fmt(&self, format: &mut fmt::Formatter) -> fmt::Result {
+        self.format(format)
+    }
+}
+
+impl<'a> WriteTo for MessageBody<'a> {
+    fn write_to(&mut self, write: &mut Write) -> Result<usize> {
+        match *self {
+            MessageBody::Reader(ref mut reader) => {
+                copy(reader, write).map(|c|{
+                    if c > usize::MAX as u64 {
+                        usize::MAX
+                    } else {
+                        c as usize
+                    }
+                })
+            },
+            MessageBody::Vector(ref vector) => {
+                write.write(&vector[..])
+            },
+            MessageBody::Slice(ref slice) => {
+                write.write(&slice)
+            },
+            MessageBody::None => Ok(0),
+        }
+    }
+}
+
 #[derive(PartialEq, Debug)]
 pub struct HttpMessage<'a> {
     pub start_line: StartLine<'a>,
@@ -127,13 +177,12 @@ impl<'a> fmt::Display for HttpMessage<'a> {
     }
 }
 
-impl<'a> ToWrite for HttpMessage<'a> {
-    fn to_write(&self, write: &mut Write) -> Result<usize> {
-        let text = format!("{}", self);
-        let bytes = text.as_bytes();
-        let wrote = try!(write.write(bytes));
-        assert_eq!(bytes.len(), wrote);
-        Ok(wrote)
+impl<'a> WriteTo for HttpMessage<'a> {
+    fn write_to(&mut self, write: &mut Write) -> Result<usize> {
+        let text = format!("{}{}\r\n", self.start_line, self.headers);
+        let headers = try!(write.write(text.as_bytes()));
+        let body = try!(self.body.write_to(write));
+        Ok(headers + body)
     }
 }
 
@@ -180,5 +229,4 @@ mod tests {
             body: MessageBody::Slice(&b"abc"[..]),
         }), "HTTP/1.1 200 OK\r\nContent-Type: plain/text\r\nContent-Length: 3\r\n\r\nabc");
     }
-
 }

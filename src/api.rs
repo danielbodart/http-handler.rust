@@ -1,7 +1,8 @@
 use std::borrow::Cow;
 use std::path::{Path};
 use std::fs::{File, canonicalize};
-use std::io::{Error, ErrorKind, Read, Write, Result};
+use std::io::{Error, ErrorKind, Write, Result};
+use std::fmt;
 use regex::Regex;
 use ast::*;
 
@@ -10,8 +11,8 @@ pub trait HttpHandler {
     fn handle(&mut self, request: &HttpMessage) -> HttpMessage;
 }
 
-pub trait ToWrite {
-    fn to_write(&self, write: &mut Write) -> Result<usize>;
+pub trait WriteTo {
+    fn write_to(&mut self, write: &mut Write) -> Result<usize>;
 }
 
 pub struct FileHandler<'a> {
@@ -31,13 +32,12 @@ impl<'a> FileHandler<'a> {
         if !full_path.starts_with(&self.base) {
             return Err(Error::new(ErrorKind::PermissionDenied, "Not allowed outside of base"));
         }
-        let mut file: File = try!(File::open(&full_path));
-        let mut buffer = Vec::new();
-        let count = try!(file.read_to_end(&mut buffer));
+        let file: File = try!(File::open(&full_path));
+        let metadata = try!(file.metadata());
         Ok(HttpMessage {
             start_line: StartLine::StatusLine(StatusLine { version: HttpVersion { major: 1, minor: 1, }, code: 200, description: "OK" }),
-            headers: Headers(vec!(("Content-Type", "text/plain".to_string()), ("Content-Length", format!("{}", count)))),
-            body: MessageBody::Vector(buffer),
+            headers: Headers(vec!(("Content-Type", "text/plain".to_string()), ("Content-Length", format!("{}", metadata.len())))),
+            body: MessageBody::Reader(Box::new(file)),
         })
     }
 
@@ -79,12 +79,13 @@ impl<H> HttpHandler for LogHandler<H> where H: HttpHandler {
     }
 }
 
+#[derive(PartialEq, Debug)]
 pub struct Uri<'a> {
-    pub scheme: &'a str,
-    pub authority: &'a str,
+    pub scheme: Option<&'a str>,
+    pub authority: Option<&'a str>,
     pub path: &'a str,
-    pub query: &'a str,
-    pub fragment: &'a str,
+    pub query: Option<&'a str>,
+    pub fragment: Option<&'a str>,
 }
 
 impl<'a> Uri<'a> {
@@ -95,12 +96,36 @@ impl<'a> Uri<'a> {
 
         let result = RFC3986.captures(value).unwrap();
         Uri {
-            scheme: result.at(1).unwrap_or(""),
-            authority: result.at(2).unwrap_or(""),
-            path: result.at(3).unwrap_or(""),
-            query: result.at(4).unwrap_or(""),
-            fragment: result.at(5).unwrap_or(""),
+            scheme: result.at(1),
+            authority: result.at(2),
+            path: result.at(3).unwrap(),
+            query: result.at(4),
+            fragment: result.at(5),
         }
+    }
+
+    pub fn to_string(&self) -> String {
+        let mut builder = String::new();
+        if let Some(scheme) = self.scheme {
+            builder = builder + scheme + ":";
+        }
+        if let Some(authority) = self.authority {
+            builder = builder + "//" + authority;
+        }
+        builder += self.path;
+        if let Some(query) = self.query {
+            builder = builder + "?" + query;
+        }
+        if let Some(fragment) = self.fragment {
+            builder = builder + "#" + fragment;
+        }
+        return builder;
+    }
+}
+
+impl<'a> fmt::Display for Uri<'a> {
+    fn fmt(&self, format: &mut fmt::Formatter) -> fmt::Result {
+        write!(format, "{}", self.to_string())
     }
 }
 
@@ -110,20 +135,38 @@ mod tests {
     #[test]
     fn can_parse_uri() {
         let uri = super::Uri::parse("http://authority/some/path?query=string#fragment");
-        assert_eq!(uri.scheme, "http");
-        assert_eq!(uri.authority, "authority");
+        assert_eq!(uri.scheme, Some("http"));
+        assert_eq!(uri.authority, Some("authority"));
         assert_eq!(uri.path, "/some/path");
-        assert_eq!(uri.query, "query=string");
-        assert_eq!(uri.fragment, "fragment");
+        assert_eq!(uri.query, Some("query=string"));
+        assert_eq!(uri.fragment, Some("fragment"));
     }
 
     #[test]
     fn supports_relative() {
         let uri = super::Uri::parse("some/path");
-        assert_eq!(uri.scheme, "");
-        assert_eq!(uri.authority, "");
+        assert_eq!(uri.scheme, None);
+        assert_eq!(uri.authority, None);
         assert_eq!(uri.path, "some/path");
-        assert_eq!(uri.query, "");
-        assert_eq!(uri.fragment, "");
+        assert_eq!(uri.query, None);
+        assert_eq!(uri.fragment, None);
+    }
+
+    #[test]
+    fn supports_urns() {
+        let uri = super::Uri::parse("uuid:720f11db-1a29-4a68-a034-43f80b27659d");
+        assert_eq!(uri.scheme, Some("uuid"));
+        assert_eq!(uri.authority, None);
+        assert_eq!(uri.path, "720f11db-1a29-4a68-a034-43f80b27659d");
+        assert_eq!(uri.query, None);
+        assert_eq!(uri.fragment, None);
+    }
+
+    #[test]
+    fn is_reverse_able() {
+        let original = "http://authority/some/path?query=string#fragment";
+        assert_eq!(super::Uri::parse(original).to_string(), original.to_string());
+        let another = "some/path";
+        assert_eq!(super::Uri::parse(another).to_string(), another.to_string());
     }
 }
