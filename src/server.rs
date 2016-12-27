@@ -8,7 +8,7 @@ use std::{thread, str};
 use nom::IResult;
 use grammar::http_message;
 use ast::*;
-use api::{ToWrite, HttpHandler};
+use api::*;
 use process::Process;
 use io::Buffer;
 
@@ -78,7 +78,7 @@ impl Process<Error> for Server {
                 let mut buffer = Buffer::new(4096);
                 loop {
                     Server::read(&mut stream, &mut buffer, |stream, request| {
-                        let mut handler = LogHandler { handler: TestHandler {} };
+                        let mut handler = LogHandler::new(FileHandler::new(std::env::current_dir().unwrap()));
                         Server::write(stream, &mut handler, &request);
                     }).expect("Error while reading stream");
                 }
@@ -88,31 +88,6 @@ impl Process<Error> for Server {
     }
 }
 
-
-struct TestHandler {}
-
-#[allow(unused_variables)]
-impl HttpHandler for TestHandler {
-    fn handle(&mut self, request: &HttpMessage) -> HttpMessage {
-        HttpMessage {
-            start_line: StartLine::StatusLine(StatusLine { version: HttpVersion { major: 1, minor: 1, }, code: 200, description: "OK" }),
-            headers: Headers(vec!(("Content-Type", "text/plain".to_string()), ("Content-Length", "5".to_string()))),
-            body: MessageBody::Slice(&b"Hello"[..]),
-        }
-    }
-}
-
-struct LogHandler<H> where H: HttpHandler {
-    handler: H,
-}
-
-impl<H> HttpHandler for LogHandler<H> where H: HttpHandler {
-    fn handle(&mut self, request: &HttpMessage) -> HttpMessage {
-        let response = self.handler.handle(request);
-        print!("{}{}\n\n\n", request, response);
-        response
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -136,7 +111,7 @@ mod tests {
         let mut count = 0;
 
         while count < index.len() {
-            super::Server::read(&mut read, &mut buffer, |stream, message|{
+            super::Server::read(&mut read, &mut buffer, |stream, message| {
                 assert_eq!(message, http_message(index[count].as_bytes()).unwrap().1);
                 count += 1;
             });

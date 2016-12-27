@@ -36,6 +36,10 @@ pub fn parse_u8(value: &str) -> Result<u8, num::ParseIntError> {
     value.parse::<u8>()
 }
 
+pub fn parse_u16(value: &str) -> Result<u16, num::ParseIntError> {
+    value.parse::<u16>()
+}
+
 pub fn to_string(vec:Vec<&[u8]>) -> Result<String, string::FromUtf8Error> {
     String::from_utf8(vec.concat())
 }

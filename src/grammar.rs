@@ -54,7 +54,7 @@ named!(request_line <RequestLine>, do_parse!(
   ));
 
 //status-code    = 3DIGIT
-named!(status_code <u8>, map_res!(map_res!(map!(many_m_n!(3,3, digit), join_vec), str::from_utf8), parse_u8));
+named!(status_code <u16>, map_res!(map_res!(map!(many_m_n!(3,3, digit), join_vec), str::from_utf8), parse_u16));
 
 //reason-phrase  = *( HTAB / SP / VCHAR / obs-text )
 named!(reason_phrase <&str>, map_res!(map!(many0!(alt!(htab | space | vchar | obs_text)), join_vec), str::from_utf8));

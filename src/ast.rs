@@ -31,7 +31,7 @@ impl<'a> fmt::Display for RequestLine<'a> {
 #[derive(PartialEq, Debug)]
 pub struct StatusLine<'a> {
     pub version: HttpVersion,
-    pub code: u8,
+    pub code: u16,
     pub description: &'a str,
 }
 
@@ -89,11 +89,19 @@ impl<'a> Headers<'a> {
 pub enum MessageBody<'a> {
     None,
     Slice(&'a [u8]),
+    Vector(Vec<u8>),
 }
 
 impl<'a> fmt::Display for MessageBody<'a> {
     fn fmt(&self, format: &mut fmt::Formatter) -> fmt::Result {
         match *self {
+            MessageBody::Vector(ref vector) => {
+                if let Ok(result) = String::from_utf8(vector.clone()) {
+                    write!(format, "{}", result)
+                } else {
+                    Ok(())
+                }
+            },
             MessageBody::Slice(ref slice) => {
                 if let Ok(result) = str::from_utf8(slice) {
                     write!(format, "{}", result)
