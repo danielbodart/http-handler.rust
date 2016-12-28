@@ -1,7 +1,7 @@
 use std::ascii::AsciiExt;
 use std::{fmt, str, usize};
 use std::io::{Read, Write, Result, copy};
-use api::WriteTo;
+use api::{WriteTo, Request};
 
 #[derive(PartialEq, Debug)]
 pub struct HttpVersion {
@@ -188,6 +188,16 @@ pub struct HttpMessage<'a> {
 impl<'a> fmt::Display for HttpMessage<'a> {
     fn fmt(&self, format: &mut fmt::Formatter) -> fmt::Result {
         write!(format, "{}{}\r\n{}", self.start_line, self.headers, self.body)
+    }
+}
+
+impl<'a> From<Request<'a>> for HttpMessage<'a> {
+    fn from(request: Request<'a>) -> HttpMessage<'a>  {
+        HttpMessage {
+            start_line: StartLine::RequestLine(RequestLine { method: request.method, request_target: request.uri.value, version: HttpVersion { major: 1, minor: 1, } }),
+            headers: request.headers,
+            body: request.entity,
+        }
     }
 }
 

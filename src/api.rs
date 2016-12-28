@@ -8,7 +8,7 @@ use ast::*;
 
 
 pub trait HttpHandler {
-    fn handle(&mut self, request: &HttpMessage) -> HttpMessage;
+    fn handle(&mut self, request: &Request) -> HttpMessage;
 }
 
 pub trait WriteTo {
@@ -54,11 +54,11 @@ impl<'a> FileHandler<'a> {
 }
 
 impl<'a> HttpHandler for FileHandler<'a> {
-    fn handle(&mut self, request: &HttpMessage) -> HttpMessage {
-        if let StartLine::RequestLine(RequestLine { method: "GET", request_target: uri, version: _ }) = request.start_line {
-            return self.get(Uri::parse(uri).path).unwrap_or(self.not_found());
+    fn handle(&mut self, request: &Request) -> HttpMessage {
+        match request {
+            &Request { method: "GET", uri: Uri { path, .. }, .. } => { return self.get(path).unwrap_or(self.not_found()) }
+            _ => { self.not_found() }
         }
-        self.not_found()
     }
 }
 
@@ -75,7 +75,7 @@ impl<H> LogHandler<H> where H: HttpHandler {
 }
 
 impl<H> HttpHandler for LogHandler<H> where H: HttpHandler {
-    fn handle(&mut self, request: &HttpMessage) -> HttpMessage {
+    fn handle(&mut self, request: &Request) -> HttpMessage {
         let response = self.handler.handle(request);
         print!("{}{}\n\n\n", request, response);
         response
@@ -89,6 +89,7 @@ pub struct Uri<'a> {
     pub path: &'a str,
     pub query: Option<&'a str>,
     pub fragment: Option<&'a str>,
+    pub value: &'a str,
 }
 
 impl<'a> Uri<'a> {
@@ -104,25 +105,8 @@ impl<'a> Uri<'a> {
             path: result.at(3).unwrap(),
             query: result.at(4),
             fragment: result.at(5),
+            value: value,
         }
-    }
-
-    pub fn to_string(&self) -> String {
-        let mut builder = String::new();
-        if let Some(scheme) = self.scheme {
-            builder = builder + scheme + ":";
-        }
-        if let Some(authority) = self.authority {
-            builder = builder + "//" + authority;
-        }
-        builder += self.path;
-        if let Some(query) = self.query {
-            builder = builder + "?" + query;
-        }
-        if let Some(fragment) = self.fragment {
-            builder = builder + "#" + fragment;
-        }
-        return builder;
     }
 }
 
@@ -145,15 +129,8 @@ impl<'a> Request<'a> {
         Request { method: method, uri: Uri::parse(url), headers: headers, entity: entity }
     }
 
-    pub fn request(method:&'a str, url: &'a str) -> Request<'a> {
+    pub fn request(method: &'a str, url: &'a str) -> Request<'a> {
         Request::new(method, url, Headers::new(), MessageBody::None)
-    }
-
-    pub fn from<M>(message: HttpMessage<'a>) -> Option<Request<'a>> {
-        if let StartLine::RequestLine(line) = message.start_line {
-            return Some(Request::new(line.method, line.request_target, message.headers, message.body));
-        }
-        None
     }
 
     pub fn get(url: &'a str) -> Request<'a> {
@@ -176,7 +153,7 @@ impl<'a> Request<'a> {
         Request::request("OPTION", url)
     }
 
-    pub fn method(&mut self, method:&'a str) -> &mut Request<'a> {
+    pub fn method(&mut self, method: &'a str) -> &mut Request<'a> {
         self.method = method;
         self
     }
@@ -185,9 +162,26 @@ impl<'a> Request<'a> {
         self.headers.replace(name, value);
         self
     }
+
+    pub fn get_header(&self, name: &str) -> Option<&str> {
+        self.headers.get(name)
+    }
 }
 
+impl<'a> From<HttpMessage<'a>> for Request<'a> {
+    fn from(message: HttpMessage<'a>) -> Request<'a> {
+        if let StartLine::RequestLine(line) = message.start_line {
+            return Request::new(line.method, line.request_target, message.headers, message.body);
+        }
+        panic!("Can not convert HttpMessage that is a Response into a Request")
+    }
+}
 
+impl<'a> fmt::Display for Request<'a> {
+    fn fmt(&self, format: &mut fmt::Formatter) -> fmt::Result {
+        write!(format, "{}{}\r\n{}", RequestLine { method: self.method, request_target: self.uri.value, version: HttpVersion { major: 1, minor: 1 } }, self.headers, self.entity)
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -224,9 +218,9 @@ mod tests {
     #[test]
     fn is_reverse_able() {
         let original = "http://authority/some/path?query=string#fragment";
-        assert_eq!(super::Uri::parse(original).to_string(), original.to_string());
+        assert_eq!(super::Uri::parse(original).value, original);
         let another = "some/path";
-        assert_eq!(super::Uri::parse(another).to_string(), another.to_string());
+        assert_eq!(super::Uri::parse(another).value, another);
     }
 
     #[test]

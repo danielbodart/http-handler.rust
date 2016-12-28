@@ -7,7 +7,6 @@ use std::net::{TcpStream, TcpListener};
 use std::{thread, str};
 use nom::IResult;
 use grammar::http_message;
-use ast::*;
 use api::*;
 use process::Process;
 use io::Buffer;
@@ -35,12 +34,12 @@ impl Server {
     }
 
     fn read<R, F>(read: &mut R, buffer: &mut Buffer, mut fun: F) -> Result<()>
-        where R: Read + Sized, F: FnMut(&mut R, HttpMessage) -> () {
+        where R: Read + Sized, F: FnMut(&mut R, Request) -> () {
         try!(buffer.from(read));
         try!(buffer.read_from(|slice| {
             match http_message(slice) {
                 IResult::Done(remainder, request) => {
-                    fun(read, request);
+                    fun(read, Request::from(request));
                     Ok(slice.len() - remainder.len())
                 },
                 IResult::Incomplete(_) => {
@@ -55,7 +54,7 @@ impl Server {
     }
 
     #[allow(unused_must_use)]
-    fn write<'a, W, H>(write: &mut W, handler: &mut H, request: &HttpMessage<'a>)
+    fn write<'a, W, H>(write: &mut W, handler: &mut H, request: &Request<'a>)
         where W: Write + Sized, H: HttpHandler + Sized {
         let mut response = handler.handle(&request);
         response.write_to(write);
@@ -97,6 +96,7 @@ mod tests {
     use io::*;
     use grammar::*;
     use std::str;
+    use api::Request;
 
     #[test]
     #[allow(unused_variables)]
@@ -115,7 +115,7 @@ mod tests {
 
         while count < index.len() {
             super::Server::read(&mut read, &mut buffer, |stream, message| {
-                assert_eq!(message, http_message(index[count].as_bytes()).unwrap().1);
+                assert_eq!(message, Request::from(http_message(index[count].as_bytes()).unwrap().1));
                 count += 1;
             });
         }
