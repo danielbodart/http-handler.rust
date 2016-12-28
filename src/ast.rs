@@ -1,7 +1,7 @@
 use std::ascii::AsciiExt;
 use std::{fmt, str, usize};
 use std::io::{Read, Write, Result, copy};
-use api::{WriteTo, Request};
+use api::{WriteTo};
 
 #[derive(PartialEq, Debug)]
 pub struct HttpVersion {
@@ -97,6 +97,11 @@ impl<'a> Headers<'a> {
         self.0.push((name, value.to_string()));
         self
     }
+
+    pub fn remove(&mut self, name: &str) ->  &mut Headers<'a> {
+        self.0.retain(|&(key, _)|!name.eq_ignore_ascii_case(key));
+        self
+    }
 }
 
 pub enum MessageBody<'a> {
@@ -188,16 +193,6 @@ pub struct HttpMessage<'a> {
 impl<'a> fmt::Display for HttpMessage<'a> {
     fn fmt(&self, format: &mut fmt::Formatter) -> fmt::Result {
         write!(format, "{}{}\r\n{}", self.start_line, self.headers, self.body)
-    }
-}
-
-impl<'a> From<Request<'a>> for HttpMessage<'a> {
-    fn from(request: Request<'a>) -> HttpMessage<'a>  {
-        HttpMessage {
-            start_line: StartLine::RequestLine(RequestLine { method: request.method, request_target: request.uri.value, version: HttpVersion { major: 1, minor: 1, } }),
-            headers: request.headers,
-            body: request.entity,
-        }
     }
 }
 
