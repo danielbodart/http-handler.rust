@@ -72,16 +72,30 @@ impl<'a> fmt::Display for Headers<'a> {
 }
 
 impl<'a> Headers<'a> {
+    pub fn new() -> Headers<'a> {
+        Headers(vec!())
+    }
+
     pub fn get(&'a self, name: &str) -> Option<&'a str> {
-        (&self.0).into_iter()
+        self.pairs().into_iter()
             .find(|&&(key, _)| name.eq_ignore_ascii_case(key))
             .map(|&(_, ref value)| value.as_str())
+    }
+
+    fn pairs(&'a self) -> &Vec<(&'a str, String)> {
+        &self.0
     }
 
     pub fn content_length(&self) -> u64 {
         self.get("Content-Length").
             and_then(|value| value.parse().ok()).
             unwrap_or(0)
+    }
+
+    pub fn replace(&mut self, name: &'a str, value:&str) -> &mut Headers<'a> {
+        self.0.retain(|&(key, _)|!name.eq_ignore_ascii_case(key));
+        self.0.push((name, value.to_string()));
+        self
     }
 }
 

@@ -33,7 +33,7 @@ impl<'a> FileHandler<'a> {
             return Err(Error::new(ErrorKind::PermissionDenied, "Not allowed outside of base"));
         }
         let file: File = try!(File::open(&full_path));
-        let metadata:Metadata = try!(file.metadata());
+        let metadata: Metadata = try!(file.metadata());
         if metadata.is_dir() {
             return Err(Error::new(ErrorKind::NotFound, "Path denotes a directory"));
         }
@@ -132,6 +132,62 @@ impl<'a> fmt::Display for Uri<'a> {
     }
 }
 
+#[derive(PartialEq, Debug)]
+pub struct Request<'a> {
+    pub method: &'a str,
+    pub uri: Uri<'a>,
+    pub headers: Headers<'a>,
+    pub entity: MessageBody<'a>,
+}
+
+impl<'a> Request<'a> {
+    pub fn new(method: &'a str, url: &'a str, headers: Headers<'a>, entity: MessageBody<'a>) -> Request<'a> {
+        Request { method: method, uri: Uri::parse(url), headers: headers, entity: entity }
+    }
+
+    pub fn request(method:&'a str, url: &'a str) -> Request<'a> {
+        Request::new(method, url, Headers::new(), MessageBody::None)
+    }
+
+    pub fn from<M>(message: HttpMessage<'a>) -> Option<Request<'a>> {
+        if let StartLine::RequestLine(line) = message.start_line {
+            return Some(Request::new(line.method, line.request_target, message.headers, message.body));
+        }
+        None
+    }
+
+    pub fn get(url: &'a str) -> Request<'a> {
+        Request::request("GET", url)
+    }
+
+    pub fn post(url: &'a str) -> Request<'a> {
+        Request::request("POST", url)
+    }
+
+    pub fn put(url: &'a str) -> Request<'a> {
+        Request::request("PUT", url)
+    }
+
+    pub fn delete(url: &'a str) -> Request<'a> {
+        Request::request("DELETE", url)
+    }
+
+    pub fn option(url: &'a str) -> Request<'a> {
+        Request::request("OPTION", url)
+    }
+
+    pub fn method(&mut self, method:&'a str) -> &mut Request<'a> {
+        self.method = method;
+        self
+    }
+
+    pub fn header(&mut self, name: &'a str, value: &str) -> &mut Request<'a> {
+        self.headers.replace(name, value);
+        self
+    }
+}
+
+
 
 #[cfg(test)]
 mod tests {
@@ -171,5 +227,18 @@ mod tests {
         assert_eq!(super::Uri::parse(original).to_string(), original.to_string());
         let another = "some/path";
         assert_eq!(super::Uri::parse(another).to_string(), another.to_string());
+    }
+
+    #[test]
+    fn can_pattern_match_a_request() {
+        use super::{Request, Uri};
+
+        let request = Request::get("/some/path");
+        match request {
+            Request { method: "GET", uri: Uri { path: "/some/path", .. }, .. } => {},
+            _ => {
+                panic!("Should have matched");
+            }
+        }
     }
 }
