@@ -40,16 +40,12 @@ impl<T: AsRef<Path>> FileHandler<T> {
             content_length(metadata.len()).
             entity(MessageBody::Reader(Box::new(file))))
     }
-
-    pub fn not_found(&self) -> Response {
-        Response::not_found().message("Not Found")
-    }
 }
 
 impl<T: AsRef<Path>> HttpHandler for FileHandler<T> {
     fn handle(&mut self, request: &mut Request) -> Response {
         match *request {
-            Request { method: "GET", uri: Uri { path, .. }, .. } => { return self.get(path).unwrap_or(self.not_found()) }
+            Request { method: "GET", uri: Uri { path, .. }, .. } => { return self.get(path).unwrap_or(Response::not_found().message("Not Found")) }
             _ => { Response::method_not_allowed() }
         }
     }
@@ -99,29 +95,24 @@ impl<'a> Uri<'a> {
             fragment: result.at(5),
         }
     }
-
-    pub fn to_string(&self) -> String {
-        let mut builder = String::new();
-        if let Some(scheme) = self.scheme {
-            builder = builder + scheme + ":";
-        }
-        if let Some(authority) = self.authority {
-            builder = builder + "//" + authority;
-        }
-        builder += self.path;
-        if let Some(query) = self.query {
-            builder = builder + "?" + query;
-        }
-        if let Some(fragment) = self.fragment {
-            builder = builder + "#" + fragment;
-        }
-        return builder;
-    }
 }
 
 impl<'a> fmt::Display for Uri<'a> {
     fn fmt(&self, format: &mut fmt::Formatter) -> fmt::Result {
-        write!(format, "{}", self.to_string())
+        if let Some(scheme) = self.scheme {
+            try!(write!(format, "{}:", scheme));
+        }
+        if let Some(authority) = self.authority {
+            try!(write!(format, "//{}", authority));
+        }
+        try!(format.write_str(self.path));
+        if let Some(query) = self.query {
+            try!(write!(format, "?{}", query));
+        }
+        if let Some(fragment) = self.fragment {
+            try!(write!(format, "#{}", fragment));
+        }
+        Ok(())
     }
 }
 
@@ -162,12 +153,12 @@ impl<'a> Request<'a> {
         Request::request("OPTION", url)
     }
 
-    pub fn method(&mut self, method: &'a str) -> &mut Request<'a> {
+    pub fn method(mut self, method: &'a str) -> Request<'a> {
         self.method = method;
         self
     }
 
-    pub fn header(&mut self, name: &'a str, value: String) -> &mut Request<'a> {
+    pub fn header(mut self, name: &'a str, value: String) -> Request<'a> {
         self.headers.replace(name, value);
         self
     }
@@ -176,7 +167,7 @@ impl<'a> Request<'a> {
         self.headers.get(name)
     }
 
-    pub fn remove_header(&mut self, name: &str) -> &mut Request<'a> {
+    pub fn remove_header(mut self, name: &str) -> Request<'a> {
         self.headers.remove(name);
         self
     }
@@ -382,9 +373,9 @@ mod tests {
 
     #[test]
     fn can_pattern_match_a_request() {
-        let request = Request::get("/some/path");
+        let request = Request::get("/some/path").header("Content-Type", "text/plain".to_string());
         match request {
-            Request { method: "GET", uri: Uri { path: "/some/path", .. }, .. } => {},
+            Request { method: "GET", uri: Uri { path: "/some/path", .. }, ref headers, .. } if headers.get("Content-Type") == Some("text/plain") => {},
             _ => {
                 panic!("Should have matched");
             }

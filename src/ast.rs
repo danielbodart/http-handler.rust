@@ -61,13 +61,10 @@ pub struct Headers<'a> (pub Vec<(&'a str, String)>);
 
 impl<'a> fmt::Display for Headers<'a> {
     fn fmt(&self, format: &mut fmt::Formatter) -> fmt::Result {
-        let mut result = String::new();
-
         for &(name, ref value) in &self.0[0..self.0.len()] {
-            result.push_str(format!("{}: {}\r\n", name, value).as_str());
+            try!(write!(format, "{}: {}\r\n", name, value));
         }
-
-        write!(format, "{}", result)
+        Ok(())
     }
 }
 
@@ -119,14 +116,14 @@ impl<'a> MessageBody<'a> {
             },
             MessageBody::Vector(ref vector) => {
                 if let Ok(result) = String::from_utf8(vector.clone()) {
-                    write!(format, "{}", result)
+                    format.write_str(result)
                 } else {
                     Ok(())
                 }
             },
             MessageBody::Slice(ref slice) => {
                 if let Ok(result) = str::from_utf8(slice) {
-                    write!(format, "{}", result)
+                    format.write_str(result)
                 } else {
                     Ok(())
                 }
