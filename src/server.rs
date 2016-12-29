@@ -54,9 +54,9 @@ impl Server {
     }
 
     #[allow(unused_must_use)]
-    fn write<'a, W, H>(write: &mut W, handler: &mut H, request: &Request<'a>)
+    fn write<'a, W, H>(write: &mut W, handler: &mut H, request: &mut Request<'a>)
         where W: Write + Sized, H: HttpHandler + Sized {
-        let mut response = handler.handle(&request);
+        let mut response = handler.handle(request);
         response.write_to(write);
     }
 }
@@ -79,9 +79,9 @@ impl Process<Error> for Server {
                 let mut stream: TcpStream = stream.unwrap();
                 let mut buffer = Buffer::new(4096);
                 loop {
-                    Server::read(&mut stream, &mut buffer, |stream, request| {
+                    Server::read(&mut stream, &mut buffer, |stream, mut request| {
                         let mut handler = FileHandler::new(std::env::current_dir().unwrap());
-                        Server::write(stream, &mut handler, &request);
+                        Server::write(stream, &mut handler, &mut request);
                     }).expect("Error while reading stream");
                 }
             });

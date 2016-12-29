@@ -92,9 +92,9 @@ impl<'a> Headers<'a> {
             unwrap_or(0)
     }
 
-    pub fn replace(&mut self, name: &'a str, value:&str) -> &mut Headers<'a> {
+    pub fn replace(&mut self, name: &'a str, value:String) -> &mut Headers<'a> {
         self.0.retain(|&(key, _)|!name.eq_ignore_ascii_case(key));
-        self.0.push((name, value.to_string()));
+        self.0.push((name, value));
         self
     }
 
@@ -199,9 +199,9 @@ impl<'a> fmt::Display for HttpMessage<'a> {
 impl<'a> WriteTo for HttpMessage<'a> {
     fn write_to(&mut self, write: &mut Write) -> Result<usize> {
         let text = format!("{}{}\r\n", self.start_line, self.headers);
-        let headers = try!(write.write(text.as_bytes()));
+        let head = try!(write.write(text.as_bytes()));
         let body = try!(self.body.write_to(write));
-        Ok(headers + body)
+        Ok(head + body)
     }
 }
 

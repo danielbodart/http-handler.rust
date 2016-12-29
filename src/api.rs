@@ -1,14 +1,14 @@
 use std::borrow::Cow;
 use std::path::{Path};
 use std::fs::{File, Metadata, canonicalize};
-use std::io::{Error, ErrorKind, Write, Result};
+use std::io::{Write, Result};
 use std::fmt;
 use regex::Regex;
 use ast::*;
 
 
 pub trait HttpHandler {
-    fn handle(&mut self, request: &Request) -> HttpMessage;
+    fn handle(&mut self, request: &mut Request) -> Response;
 }
 
 pub trait WriteTo {
@@ -27,37 +27,32 @@ impl<'a> FileHandler<'a> {
         }
     }
 
-    pub fn get(&self, path: &str) -> Result<HttpMessage> {
+    pub fn get(&self, path: &str) -> Result<Response> {
         let full_path = try!(canonicalize(self.base.join(&path[1..])));
         if !full_path.starts_with(&self.base) {
-            return Err(Error::new(ErrorKind::PermissionDenied, "Not allowed outside of base"));
+            return Ok(Response::unauthorized().message("Not allowed outside of base"));
         }
         let file: File = try!(File::open(&full_path));
         let metadata: Metadata = try!(file.metadata());
         if metadata.is_dir() {
-            return Err(Error::new(ErrorKind::NotFound, "Path denotes a directory"));
+            return Ok(Response::not_found().message("Path denotes a directory"));
         }
-        Ok(HttpMessage {
-            start_line: StartLine::StatusLine(StatusLine { version: HttpVersion { major: 1, minor: 1, }, code: 200, description: "OK" }),
-            headers: Headers(vec!(("Content-Type", "text/plain".to_string()), ("Content-Length", format!("{}", metadata.len())))),
-            body: MessageBody::Reader(Box::new(file)),
-        })
+        Ok(Response::ok().
+            content_type("text/plain".to_string()).
+            content_length(metadata.len()).
+            entity(MessageBody::Reader(Box::new(file))))
     }
 
-    pub fn not_found(&self) -> HttpMessage {
-        HttpMessage {
-            start_line: StartLine::StatusLine(StatusLine { version: HttpVersion { major: 1, minor: 1, }, code: 404, description: "Not Found" }),
-            headers: Headers(vec!(("Content-Length", "0".to_string()))),
-            body: MessageBody::None,
-        }
+    pub fn not_found(&self) -> Response {
+        Response::not_found().message("Not Found")
     }
 }
 
 impl<'a> HttpHandler for FileHandler<'a> {
-    fn handle(&mut self, request: &Request) -> HttpMessage {
+    fn handle(&mut self, request: &mut Request) -> Response {
         match *request {
             Request { method: "GET", uri: Uri { path, .. }, .. } => { return self.get(path).unwrap_or(self.not_found()) }
-            _ => { self.not_found() }
+            _ => { Response::method_not_allowed() }
         }
     }
 }
@@ -75,7 +70,7 @@ impl<H> LogHandler<H> where H: HttpHandler {
 }
 
 impl<H> HttpHandler for LogHandler<H> where H: HttpHandler {
-    fn handle(&mut self, request: &Request) -> HttpMessage {
+    fn handle(&mut self, request: &mut Request) -> Response {
         let response = self.handler.handle(request);
         print!("{}{}\n\n\n", request, response);
         response
@@ -174,7 +169,7 @@ impl<'a> Request<'a> {
         self
     }
 
-    pub fn header(&mut self, name: &'a str, value: &str) -> &mut Request<'a> {
+    pub fn header(&mut self, name: &'a str, value: String) -> &mut Request<'a> {
         self.headers.replace(name, value);
         self
     }
@@ -207,6 +202,17 @@ impl<'a> fmt::Display for Request<'a> {
     }
 }
 
+impl<'a> WriteTo for Request<'a> {
+    fn write_to(&mut self, write: &mut Write) -> Result<usize> {
+        let text = format!("{}{}\r\n",
+                           RequestLine { method: self.method, request_target: self.uri.to_string().as_str(), version: HttpVersion { major: 1, minor: 1 } },
+                           self.headers);
+        let head = try!(write.write(text.as_bytes()));
+        let body = try!(self.entity.write_to(write));
+        Ok(head + body)
+    }
+}
+
 #[derive(PartialEq, Debug)]
 pub struct Response<'a> {
     pub code: u16,
@@ -217,7 +223,7 @@ pub struct Response<'a> {
 
 impl<'a> Response<'a> {
     pub fn new(code: u16, description: &'a str, headers: Headers<'a>, entity: MessageBody<'a>) -> Response<'a> {
-        Response { code: code, description: description, headers: headers, entity: entity }
+        Response { code: code, description: description, headers: headers, entity: entity }.build()
     }
 
     pub fn response(code: u16, description: &'a str) -> Response<'a> {
@@ -240,17 +246,28 @@ impl<'a> Response<'a> {
         Response::response(404, "Not Found")
     }
 
-    pub fn code(&mut self, code: u16) -> &mut Response<'a> {
+    pub fn method_not_allowed () -> Response<'a> {
+        Response::response(405, "Method Not Allowed")
+    }
+
+    pub fn code(mut self, code: u16) -> Response<'a> {
         self.code = code;
         self
     }
 
-    pub fn description(&mut self, description: &'a str) -> &mut Response<'a> {
+    pub fn description(mut self, description: &'a str) -> Response<'a> {
         self.description = description;
         self
     }
 
-    pub fn header(&mut self, name: &'a str, value: &str) -> &mut Response<'a> {
+    pub fn message(self, message: &'a str) -> Response<'a> {
+        let bytes = message.as_bytes();
+        self.description(message).
+            content_type("text/plain".to_string()).
+            entity(MessageBody::Slice(bytes))
+    }
+
+    pub fn header(mut self, name: &'a str, value: String) -> Response<'a> {
         self.headers.replace(name, value);
         self
     }
@@ -259,8 +276,37 @@ impl<'a> Response<'a> {
         self.headers.get(name)
     }
 
-    pub fn remove_header(&mut self, name: &str) -> &mut Response<'a> {
+    pub fn remove_header(mut self, name: &str) -> Response<'a> {
         self.headers.remove(name);
+        self
+    }
+
+    pub fn entity(mut self, entity: MessageBody<'a>) -> Response<'a> {
+        self.entity = entity;
+        self.build()
+    }
+
+    pub fn content_type(self, media_type: String) -> Response<'a> {
+        self.header("Content-Type", media_type)
+    }
+
+    pub fn content_length(self, length: u64) -> Response<'a> {
+        self.header("Content-Length", format!("{}", length))
+    }
+
+    fn calculate_length(&self) -> Option<u64> {
+        match self.entity {
+            MessageBody::None => { Some(0) }
+            MessageBody::Slice(ref slice) => { Some(slice.len() as u64) }
+            MessageBody::Vector(ref vector) => { Some(vector.len() as u64) }
+            _ => None
+        }
+    }
+
+    fn build(self) -> Response<'a> {
+        if let Some(length) = self.calculate_length() {
+            return self.content_length(length)
+        }
         self
     }
 }
@@ -280,6 +326,17 @@ impl<'a> fmt::Display for Response<'a> {
                StatusLine { code: self.code, description: self.description, version: HttpVersion { major: 1, minor: 1 } },
                self.headers,
                self.entity)
+    }
+}
+
+impl<'a> WriteTo for Response<'a> {
+    fn write_to(&mut self, write: &mut Write) -> Result<usize> {
+        let text = format!("{}{}\r\n",
+                           StatusLine { code: self.code, description: self.description, version: HttpVersion { major: 1, minor: 1 } },
+                           self.headers);
+        let head = try!(write.write(text.as_bytes()));
+        let body = try!(self.entity.write_to(write));
+        Ok(head + body)
     }
 }
 
