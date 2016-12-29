@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::path::{Path};
 use std::fs::{File, Metadata, canonicalize};
 use std::io::{Write, Result};
@@ -15,20 +14,19 @@ pub trait WriteTo {
     fn write_to(&mut self, write: &mut Write) -> Result<usize>;
 }
 
-pub struct FileHandler<'a> {
-    base: Cow<'a, Path>,
+pub struct FileHandler<T: AsRef<Path>> {
+    base: T,
 }
 
-impl<'a> FileHandler<'a> {
-    pub fn new<P>(base: P) -> FileHandler<'a>
-        where P: Into<Cow<'a, Path>> {
+impl<T: AsRef<Path>> FileHandler<T> {
+    pub fn new(base: T) -> FileHandler<T> {
         FileHandler {
-            base: base.into(),
+            base: base,
         }
     }
 
     pub fn get(&self, path: &str) -> Result<Response> {
-        let full_path = try!(canonicalize(self.base.join(&path[1..])));
+        let full_path = try!(canonicalize(self.base.as_ref().join(&path[1..])));
         if !full_path.starts_with(&self.base) {
             return Ok(Response::unauthorized().message("Not allowed outside of base"));
         }
@@ -48,7 +46,7 @@ impl<'a> FileHandler<'a> {
     }
 }
 
-impl<'a> HttpHandler for FileHandler<'a> {
+impl<T: AsRef<Path>> HttpHandler for FileHandler<T> {
     fn handle(&mut self, request: &mut Request) -> Response {
         match *request {
             Request { method: "GET", uri: Uri { path, .. }, .. } => { return self.get(path).unwrap_or(self.not_found()) }
