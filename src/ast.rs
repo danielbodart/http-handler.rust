@@ -116,7 +116,7 @@ impl<'a> MessageBody<'a> {
             },
             MessageBody::Vector(ref vector) => {
                 if let Ok(result) = String::from_utf8(vector.clone()) {
-                    format.write_str(result)
+                    format.write_str(result.as_str())
                 } else {
                     Ok(())
                 }
