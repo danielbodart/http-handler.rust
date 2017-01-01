@@ -72,11 +72,6 @@ pub fn to_string(vec:Vec<&[u8]>) -> Result<String, string::FromUtf8Error> {
     String::from_utf8(vec.concat())
 }
 
-//pub fn as_str_ref(vec:Vec<&[u8]>) -> Result<&AsRef<str>, string::FromUtf8Error> {
-//    String::from_utf8(vec.concat())
-//}
-
-
 
 #[cfg(test)]
 mod tests {

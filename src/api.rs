@@ -7,7 +7,7 @@ use ast::*;
 
 
 pub trait HttpHandler {
-    fn handle(&mut self, request: &mut Request) -> Response;
+    fn handle(&mut self, request: Request) -> Response;
 }
 
 pub trait WriteTo {
@@ -43,8 +43,8 @@ impl<T: AsRef<Path>> FileHandler<T> {
 }
 
 impl<T: AsRef<Path>> HttpHandler for FileHandler<T> {
-    fn handle(&mut self, request: &mut Request) -> Response {
-        match *request {
+    fn handle(&mut self, request: Request) -> Response {
+        match request {
             Request { method: "GET", uri: Uri { path, .. }, .. } => { return self.get(path).unwrap_or(Response::not_found().message("Not Found")) }
             _ => { Response::method_not_allowed() }
         }
@@ -64,9 +64,10 @@ impl<H> LogHandler<H> where H: HttpHandler {
 }
 
 impl<H> HttpHandler for LogHandler<H> where H: HttpHandler {
-    fn handle(&mut self, request: &mut Request) -> Response {
+    fn handle(&mut self, request: Request) -> Response {
+        let r = format!("{}", request);
         let response = self.handler.handle(request);
-        print!("{}{}\n\n\n", request, response);
+        print!("{}{}\n\n\n", r, response);
         response
     }
 }

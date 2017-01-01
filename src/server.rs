@@ -33,13 +33,13 @@ impl Server {
         Ok(listener)
     }
 
-    fn read<R, F>(read: &mut R, buffer: &mut Buffer, mut fun: F) -> Result<()>
+    fn read<R, F>(reader: &mut R, buffer: &mut Buffer, mut fun: F) -> Result<usize>
         where R: Read + Sized, F: FnMut(&mut R, Request) -> () {
-        try!(buffer.from(read));
+        let read = try!(buffer.from(reader));
         try!(buffer.read_from(|slice| {
             match http_message(slice) {
                 IResult::Done(remainder, request) => {
-                    fun(read, Request::from(request));
+                    fun(reader, Request::from(request));
                     Ok(slice.len() - remainder.len())
                 },
                 IResult::Incomplete(_) => {
@@ -50,11 +50,11 @@ impl Server {
                 },
             }
         }));
-        Ok(())
+        Ok(read)
     }
 
     #[allow(unused_must_use)]
-    fn write<'a, W, H>(write: &mut W, handler: &mut H, request: &mut Request<'a>)
+    fn write<'a, W, H>(write: &mut W, handler: &mut H, request: Request<'a>)
         where W: Write + Sized, H: HttpHandler + Sized {
         let mut response = handler.handle(request);
         response.write_to(write);
@@ -79,10 +79,13 @@ impl Process<Error> for Server {
                 let mut stream: TcpStream = stream.unwrap();
                 let mut buffer = Buffer::new(4096);
                 loop {
-                    Server::read(&mut stream, &mut buffer, |stream, mut request| {
+                    match Server::read(&mut stream, &mut buffer, |s, request| {
                         let mut handler = FileHandler::new(std::env::current_dir().unwrap());
-                        Server::write(stream, &mut handler, &mut request);
-                    }).expect("Error while reading stream");
+                        Server::write(s, &mut handler, request);
+                    }) {
+                        Ok(read) if read > 0 => { },
+                        _ => break,
+                    }
                 }
             });
         }
