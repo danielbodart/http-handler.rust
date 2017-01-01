@@ -119,6 +119,7 @@ mod tests {
             super::Server::read(&mut read, &mut buffer, |stream, message| {
                 assert_eq!(message, Request::from(http_message(index[count].as_bytes()).unwrap().1));
                 count += 1;
+                Ok(1)
             });
         }
     }
