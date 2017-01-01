@@ -29,9 +29,9 @@ named!(vchar, char_predicate!(range(0x21,0x7E)));
 // obs-text       = %x80-FF ; obsolete text
 named!(obs_text, char_predicate!(range(0x80,0xFF)));
 // OWS            = *( SP / HTAB ) ; optional whitespace
-named!(ows, map!(many0!(alt!(space | htab)), join_vec));
+named!(ows, map_res!(many0!(alt!(space | htab)), join_vec));
 // RWS            = 1*( SP / HTAB ) ; required whitespace
-named!(rws, map!(many1!(alt!(space | htab)), join_vec));
+named!(rws, map_res!(many1!(alt!(space | htab)), join_vec));
 // BWS            = OWS ; "bad" whitespace
 
 // TODO: full impl
@@ -42,7 +42,7 @@ named!(request_target <&str>, map_res!(is_not!(" "), str::from_utf8));
 named!(tchar, char_predicate!(or!(among("!#$%&'*+-.^_`|~"), is_digit, is_alphabetic)));
 
 ////token = 1*tchar
-named!(token, map!(many1!(tchar), join_vec));
+named!(token, map_res!(many1!(tchar), join_vec));
 
 //method = token
 named!(method <&str>, map_res!(token, str::from_utf8));
@@ -54,10 +54,10 @@ named!(request_line <RequestLine>, do_parse!(
   ));
 
 //status-code    = 3DIGIT
-named!(status_code <u16>, map_res!(map_res!(map!(many_m_n!(3,3, digit), join_vec), str::from_utf8), parse_u16));
+named!(status_code <u16>, map_res!(map_res!(map_res!(many_m_n!(3,3, digit), join_vec), str::from_utf8), parse_u16));
 
 //reason-phrase  = *( HTAB / SP / VCHAR / obs-text )
-named!(reason_phrase <&str>, map_res!(map!(many0!(alt!(htab | space | vchar | obs_text)), join_vec), str::from_utf8));
+named!(reason_phrase <&str>, map_res!(map_res!(many0!(alt!(htab | space | vchar | obs_text)), join_vec), str::from_utf8));
 
 // status-line = HTTP-version SP status-code SP reason-phrase CRLF
 named!(status_line <StatusLine>, do_parse!(
@@ -75,14 +75,14 @@ named!(field_name <&str>, map_res!(token, str::from_utf8));
 // field-vchar    = VCHAR / obs-text
 named!(field_vchar, alt!(vchar | obs_text));
 
-named!(spaces, map!(many1!(alt!(space | htab)), join_vec));
+named!(spaces, map_res!(many1!(alt!(space | htab)), join_vec));
 
 // field-content  = field-vchar [ 1*( SP / HTAB ) field-vchar ]
 named!(field_content, do_parse!(
     chr:field_vchar >>
-    optional: opt!(complete!(map!(pair!( spaces, field_vchar), join_pair))) >>
+    optional: opt!(complete!(map_res!(pair!( spaces, field_vchar), join_pair))) >>
     (match optional {
-        Some(other) => join_slice(chr, other),
+        Some(other) => join_slice(chr, other).unwrap(),
         None => chr,
     })
   ));
