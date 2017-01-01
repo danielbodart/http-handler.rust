@@ -34,12 +34,12 @@ impl Server {
     }
 
     fn read<R, F>(reader: &mut R, buffer: &mut Buffer, mut fun: F) -> Result<usize>
-        where R: Read + Sized, F: FnMut(&mut R, Request) -> () {
+        where R: Read + Sized, F: FnMut(&mut R, Request) -> Result<usize> {
         let read = try!(buffer.from(reader));
         try!(buffer.read_from(|slice| {
             match http_message(slice) {
                 IResult::Done(remainder, request) => {
-                    fun(reader, Request::from(request));
+                    try!(fun(reader, Request::from(request)));
                     Ok(slice.len() - remainder.len())
                 },
                 IResult::Incomplete(_) => {
@@ -53,11 +53,10 @@ impl Server {
         Ok(read)
     }
 
-    #[allow(unused_must_use)]
-    fn write<'a, W, H>(write: &mut W, handler: &mut H, request: Request<'a>)
+    fn write<'a, W, H>(write: &mut W, handler: &mut H, request: Request<'a>) -> Result<usize>
         where W: Write + Sized, H: HttpHandler + Sized {
         let mut response = handler.handle(request);
-        response.write_to(write);
+        response.write_to(write)
     }
 }
 
@@ -81,7 +80,7 @@ impl Process<Error> for Server {
                 loop {
                     match Server::read(&mut stream, &mut buffer, |s, request| {
                         let mut handler = FileHandler::new(std::env::current_dir().unwrap());
-                        Server::write(s, &mut handler, request);
+                        Server::write(s, &mut handler, request)
                     }) {
                         Ok(read) if read > 0 => { },
                         _ => break,
