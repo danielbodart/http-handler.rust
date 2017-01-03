@@ -1,6 +1,6 @@
 extern crate nom;
 
-use nom::{is_digit, is_alphabetic, IResult};
+use nom::{is_digit, is_hex_digit, is_alphabetic, IResult};
 use std::{str};
 
 use misc::*;
@@ -10,7 +10,11 @@ use predicates::*;
 // HTTP-name     = %x48.54.54.50 ; "HTTP", case-sensitive
 named!(http_name, tag!("HTTP"));
 
+//  DIGIT          =  %x30-39 ; 0-9
 named!(digit, char_predicate!(is_digit));
+
+// HEXDIG (hexadecimal 0-9/A-F/a-f)
+named!(hex_digit, char_predicate!(is_hex_digit));
 
 // HTTP-version  = HTTP-name "/" DIGIT "." DIGIT
 named!(http_version <HttpVersion>, do_parse!(
@@ -33,6 +37,18 @@ named!(ows, map_res!(many0!(alt!(space | htab)), join_vec));
 // RWS            = 1*( SP / HTAB ) ; required whitespace
 named!(rws, map_res!(many1!(alt!(space | htab)), join_vec));
 // BWS            = OWS ; "bad" whitespace
+
+// DQUOTE         =  %x22 ; " (Double Quote)
+named!(double_quote, tag!("\""));
+
+// qdtext         = HTAB / SP / %x21 / %x23-5B / %x5D-7E / obs-text
+named!(quoted_text, alt!(htab | space | char_predicate!(or!(ch(0x21), range(0x23,0x5B), range(0x5D,0x7E))) | obs_text ));
+
+// quoted-pair    = "\" ( HTAB / SP / VCHAR / obs-text )
+named!(quoted_pair, preceded!(char!('\\'), alt!(htab | space | vchar | obs_text )));
+
+// quoted-string  = DQUOTE *( qdtext / quoted-pair ) DQUOTE
+named!(quoted_string <String>, delimited!(double_quote, map_res!(many0!(alt!(quoted_text | quoted_pair)), to_string), double_quote));
 
 // TODO: full impl
 named!(request_target <&str>, map_res!(is_not!(" "), str::from_utf8));
@@ -120,6 +136,43 @@ named!(pub http_message <HttpMessage> , do_parse!(
     start_line:start_line >> headers:headers >> crlf >> body:apply!(message_body, &headers) >>
     (HttpMessage { start_line:start_line, headers:headers, body:body})
   ));
+
+// chunk-size     = 1*HEXDIG
+named!(chunk_size <u64>, map_res!(map_res!(map_res!(many1!(hex_digit), join_vec), str::from_utf8), parse_hex));
+
+// chunk-ext-name = token
+named!(chunk_ext_name <&str>, map_res!(token, str::from_utf8));
+
+// chunk-ext-val  = token / quoted-string
+named!(chunk_ext_value <String>, alt!(map_res!(token, to_owned_string) | quoted_string));
+
+//  chunk-ext      = *( BWS  ";" BWS chunk-ext-name [ BWS  "=" BWS chunk-ext-val ] )
+named!(chunk_ext <Vec<(&str, Option<String>)>>, many0!(do_parse!(
+    ows >> char!(';') >> ows >> name:chunk_ext_name >> value:opt!(preceded!(delimited!(ows, char!('='), ows), chunk_ext_value)) >>
+    (name, value)
+)));
+
+/*
+     chunked-body   = *chunk
+                      last-chunk
+                      trailer-part
+                      CRLF
+
+     chunk          = chunk-size [ chunk-ext ] CRLF
+                      chunk-data CRLF
+
+     last-chunk     = 1*("0") [ chunk-ext ] CRLF
+
+     chunk-data     = 1*OCTET ; a sequence of chunk-size octets
+
+
+
+
+
+
+     trailer-part   = *( header-field CRLF )
+
+     */
 
 #[cfg(test)]
 mod tests {
@@ -231,4 +284,30 @@ mod tests {
             body: MessageBody::Slice(&b"abc"[..]),
         }));
     }
+
+    #[test]
+    fn chunk_size() {
+        assert_eq!(super::chunk_size(&b"4\r\n"[..]), Done(&b"\r\n"[..], 4));
+        assert_eq!(super::chunk_size(&b"E\r\n"[..]), Done(&b"\r\n"[..], 14));
+        assert_eq!(super::chunk_size(&b"e\r\n"[..]), Done(&b"\r\n"[..], 14));
+    }
+
+    #[test]
+    fn quoted_string() {
+        assert_eq!(super::quoted_string(&b"\"This is a quoted string\""[..]), Done(&b""[..], "This is a quoted string".to_string()));
+        assert_eq!(super::quoted_string(&b"\"This is a \\\"quoted\\\" string\""[..]), Done(&b""[..], "This is a \"quoted\" string".to_string()));
+    }
+
+    #[test]
+    fn chunk_ext() {
+        assert_eq!(super::chunk_ext(&b";foo=bar"[..]), Done(&b""[..], vec!(("foo", Some("bar".to_string())))));
+    }
+
+
+    #[test]
+    fn chuncked_encoding() {
+//        let chunked = "4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n0\r\n\r\n";
+    }
+
+
 }

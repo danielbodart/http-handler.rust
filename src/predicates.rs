@@ -25,3 +25,9 @@ pub fn range(start:u8, end:u8) -> Box<Fn(u8) -> bool> {
         chr >= start && chr <= end
     })
 }
+
+pub fn ch(value:u8) -> Box<Fn(u8) -> bool> {
+    Box::new(move |chr| {
+        chr == value
+    })
+}

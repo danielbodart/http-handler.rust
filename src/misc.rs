@@ -68,8 +68,16 @@ pub fn parse_u16(value: &str) -> Result<u16, num::ParseIntError> {
     value.parse::<u16>()
 }
 
+pub fn parse_hex(value: &str) -> Result<u64, num::ParseIntError> {
+    u64::from_str_radix(value, 16)
+}
+
 pub fn to_string(vec:Vec<&[u8]>) -> Result<String, string::FromUtf8Error> {
     String::from_utf8(vec.concat())
+}
+
+pub fn to_owned_string(slice:&[u8]) -> Result<String, string::FromUtf8Error> {
+    String::from_utf8(slice.to_vec())
 }
 
 
