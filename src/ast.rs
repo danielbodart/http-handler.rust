@@ -202,6 +202,22 @@ impl<'a> WriteTo for HttpMessage<'a> {
     }
 }
 
+#[derive(PartialEq, Debug)]
+pub struct ChunkExtensions<'a> (pub Vec<(&'a str, Option<String>)>);
+
+impl<'a> fmt::Display for ChunkExtensions<'a> {
+    fn fmt(&self, format: &mut fmt::Formatter) -> fmt::Result {
+        for &(name, ref option) in &self.0[0..self.0.len()] {
+            if let Some(ref value) = *option {
+                try!(write!(format, ";{}={}", name, value));
+            } else {
+                try!(write!(format, ";{}", name));
+            }
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

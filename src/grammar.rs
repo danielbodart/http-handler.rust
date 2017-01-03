@@ -147,10 +147,19 @@ named!(chunk_ext_name <&str>, map_res!(token, str::from_utf8));
 named!(chunk_ext_value <String>, alt!(map_res!(token, to_owned_string) | quoted_string));
 
 //  chunk-ext      = *( BWS  ";" BWS chunk-ext-name [ BWS  "=" BWS chunk-ext-val ] )
-named!(chunk_ext <Vec<(&str, Option<String>)>>, many0!(do_parse!(
-    ows >> char!(';') >> ows >> name:chunk_ext_name >> value:opt!(preceded!(delimited!(ows, char!('='), ows), chunk_ext_value)) >>
+named!(chunk_ext <ChunkExtensions>, map!(many0!(do_parse!(
+    ows >> char!(';') >> ows >> name:chunk_ext_name >> value:opt!(complete!(preceded!(delimited!(ows, char!('='), ows), chunk_ext_value))) >>
     (name, value)
-)));
+)), ChunkExtensions));
+
+// chunk-data     = 1*OCTET ; a sequence of chunk-size octets
+
+// chunk          = chunk-size [ chunk-ext ] CRLF chunk-data CRLF
+named!(chunk <(ChunkExtensions, &[u8])>, do_parse!(
+    size:chunk_size >> extensions:chunk_ext >> crlf >> data:take!(size) >> crlf >>
+    (extensions, data)
+));
+
 
 /*
      chunked-body   = *chunk
@@ -158,12 +167,10 @@ named!(chunk_ext <Vec<(&str, Option<String>)>>, many0!(do_parse!(
                       trailer-part
                       CRLF
 
-     chunk          = chunk-size [ chunk-ext ] CRLF
-                      chunk-data CRLF
+
 
      last-chunk     = 1*("0") [ chunk-ext ] CRLF
 
-     chunk-data     = 1*OCTET ; a sequence of chunk-size octets
 
 
 
@@ -300,7 +307,16 @@ mod tests {
 
     #[test]
     fn chunk_ext() {
-        assert_eq!(super::chunk_ext(&b";foo=bar"[..]), Done(&b""[..], vec!(("foo", Some("bar".to_string())))));
+        assert_eq!(super::chunk_ext(&b";foo=bar"[..]), Done(&b""[..], ChunkExtensions(vec!(("foo", Some("bar".to_string()))))));
+        assert_eq!(super::chunk_ext(&b";foo"[..]), Done(&b""[..], ChunkExtensions(vec!(("foo", None)))));
+        assert_eq!(super::chunk_ext(&b";foo=bar;baz"[..]), Done(&b""[..], ChunkExtensions(vec!(("foo", Some("bar".to_string())), ("baz", None)))));
+        assert_eq!(super::chunk_ext(&b" ; foo = bar ; baz"[..]), Done(&b""[..], ChunkExtensions(vec!(("foo", Some("bar".to_string())), ("baz", None)))));
+        assert_eq!(super::chunk_ext(&b""[..]), Done(&b""[..], ChunkExtensions(vec!())));
+    }
+
+    #[test]
+    fn chunk() {
+        assert_eq!(super::chunk(&b"4;foo=bar\r\nWiki\r\n"[..]), Done(&b""[..], (ChunkExtensions(vec!(("foo", Some("bar".to_string())))), &b"Wiki"[..])));
     }
 
 
