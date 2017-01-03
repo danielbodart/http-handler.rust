@@ -153,10 +153,9 @@ named!(chunk_ext <ChunkExtensions>, map!(many0!(do_parse!(
 )), ChunkExtensions));
 
 // chunk-data     = 1*OCTET ; a sequence of chunk-size octets
-
 // chunk          = chunk-size [ chunk-ext ] CRLF chunk-data CRLF
 named!(chunk <Chunk>, do_parse!(
-    size:chunk_size >> extensions:chunk_ext >> crlf >> data:take!(size) >> crlf >>
+    size:chunk_size >> extensions:chunk_ext >> crlf >> data:cond_reduce!(size > 0, take!(size)) >> crlf >>
     (Chunk::Slice(extensions, data))
 ));
 
