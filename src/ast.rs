@@ -89,14 +89,14 @@ impl<'a> Headers<'a> {
             unwrap_or(0)
     }
 
-    pub fn replace(&mut self, name: &'a str, value:String) -> &mut Headers<'a> {
-        self.0.retain(|&(key, _)|!name.eq_ignore_ascii_case(key));
+    pub fn replace(&mut self, name: &'a str, value: String) -> &mut Headers<'a> {
+        self.0.retain(|&(key, _)| !name.eq_ignore_ascii_case(key));
         self.0.push((name, value));
         self
     }
 
-    pub fn remove(&mut self, name: &str) ->  &mut Headers<'a> {
-        self.0.retain(|&(key, _)|!name.eq_ignore_ascii_case(key));
+    pub fn remove(&mut self, name: &str) -> &mut Headers<'a> {
+        self.0.retain(|&(key, _)| !name.eq_ignore_ascii_case(key));
         self
     }
 }
@@ -217,6 +217,29 @@ impl<'a> fmt::Display for ChunkExtensions<'a> {
         Ok(())
     }
 }
+
+#[derive(PartialEq, Debug)]
+pub enum Chunk<'a> {
+    Slice(ChunkExtensions<'a>, &'a [u8]),
+    Last(ChunkExtensions<'a>),
+}
+
+#[derive(PartialEq, Debug)]
+pub struct ChunkedBody<'a> {
+    chunks: Vec<Chunk<'a>>,
+    trailers: Headers<'a>
+}
+
+impl<'a> ChunkedBody<'a> {
+    pub fn new(mut chunks:Vec<Chunk<'a>>, last:Chunk<'a>, trailers:Headers<'a>) -> ChunkedBody<'a> {
+        chunks.push(last);
+        ChunkedBody {
+            chunks: chunks,
+            trailers: trailers,
+        }
+    }
+}
+
 
 #[cfg(test)]
 mod tests {

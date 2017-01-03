@@ -155,31 +155,26 @@ named!(chunk_ext <ChunkExtensions>, map!(many0!(do_parse!(
 // chunk-data     = 1*OCTET ; a sequence of chunk-size octets
 
 // chunk          = chunk-size [ chunk-ext ] CRLF chunk-data CRLF
-named!(chunk <(ChunkExtensions, &[u8])>, do_parse!(
+named!(chunk <Chunk>, do_parse!(
     size:chunk_size >> extensions:chunk_ext >> crlf >> data:take!(size) >> crlf >>
-    (extensions, data)
+    (Chunk::Slice(extensions, data))
 ));
 
+// last-chunk     = 1*("0") [ chunk-ext ] CRLF
+named!(last_chunk <Chunk>, do_parse!(
+    many1!(char!('0')) >> extensions:chunk_ext >> crlf >>
+    (Chunk::Last(extensions))
+));
 
-/*
-     chunked-body   = *chunk
-                      last-chunk
-                      trailer-part
-                      CRLF
+// trailer-part   = *( header-field CRLF )
+// TODO: Alias headers
 
+// chunked-body   = *chunk last-chunk trailer-part CRLF
+named!(chunked_body <ChunkedBody>, do_parse!(
+    chunks:many0!(chunk) >> last:last_chunk >> trailers:headers >> crlf >>
+    (ChunkedBody::new(chunks, last, trailers))
+));
 
-
-     last-chunk     = 1*("0") [ chunk-ext ] CRLF
-
-
-
-
-
-
-
-     trailer-part   = *( header-field CRLF )
-
-     */
 
 #[cfg(test)]
 mod tests {
@@ -316,14 +311,19 @@ mod tests {
 
     #[test]
     fn chunk() {
-        assert_eq!(super::chunk(&b"4;foo=bar\r\nWiki\r\n"[..]), Done(&b""[..], (ChunkExtensions(vec!(("foo", Some("bar".to_string())))), &b"Wiki"[..])));
+        assert_eq!(super::chunk(&b"4;foo=bar\r\nWiki\r\n"[..]), Done(&b""[..], Chunk::Slice(ChunkExtensions(vec!(("foo", Some("bar".to_string())))), &b"Wiki"[..])));
     }
 
 
     #[test]
-    fn chuncked_encoding() {
-//        let chunked = "4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n0\r\n\r\n";
+    fn chunked_body() {
+        let chunked_body = ChunkedBody::new(vec!(
+            Chunk::Slice(ChunkExtensions(vec!()), &b"Wiki"[..]),
+            Chunk::Slice(ChunkExtensions(vec!()), &b"pedia"[..]),
+            Chunk::Slice(ChunkExtensions(vec!()), &b" in\r\n\r\nchunks."[..])),
+                                 Chunk::Last(ChunkExtensions(vec!())),
+                                 Headers(vec!()));
+        assert_eq!(super::chunked_body(&b"4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n0\r\n\r\n"[..]),
+        Done(&b""[..], chunked_body));
     }
-
-
 }
