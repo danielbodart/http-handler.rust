@@ -181,6 +181,26 @@ impl<'a> WriteTo for MessageBody<'a> {
 }
 
 #[derive(PartialEq, Debug)]
+pub struct MessageHead<'a> {
+    pub start_line: StartLine<'a>,
+    pub headers: Headers<'a>,
+}
+
+impl<'a> fmt::Display for MessageHead<'a> {
+    fn fmt(&self, format: &mut fmt::Formatter) -> fmt::Result {
+        write!(format, "{}{}\r\n", self.start_line, self.headers)
+    }
+}
+
+impl<'a> WriteTo for MessageHead<'a> {
+    fn write_to(&mut self, write: &mut Write) -> Result<usize> {
+        let text = format!("{}{}\r\n", self.start_line, self.headers);
+        let head = write.write(text.as_bytes())?;
+        Ok(head)
+    }
+}
+
+#[derive(PartialEq, Debug)]
 pub struct HttpMessage<'a> {
     pub start_line: StartLine<'a>,
     pub headers: Headers<'a>,

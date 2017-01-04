@@ -130,11 +130,15 @@ pub fn message_body<'a>(slice: &'a [u8], headers: &Headers<'a>) -> IResult<&'a [
 
 named!(headers <Headers>, map!(many0!(terminated!(header_field, crlf)), Headers));
 
+named!(pub message_head <MessageHead> , do_parse!(
+    start_line:start_line >> headers:headers >> crlf >>
+    (MessageHead { start_line:start_line, headers:headers})
+  ));
 
 // HTTP-message = start-line *( header-field CRLF ) CRLF [ message-body ]
 named!(pub http_message <HttpMessage> , do_parse!(
-    start_line:start_line >> headers:headers >> crlf >> body:apply!(message_body, &headers) >>
-    (HttpMessage { start_line:start_line, headers:headers, body:body})
+    head:message_head >> body:apply!(message_body, &head.headers) >>
+    (HttpMessage { start_line:head.start_line, headers:head.headers, body:body})
   ));
 
 // chunk-size     = 1*HEXDIG
@@ -325,4 +329,13 @@ mod tests {
         assert_eq!(super::chunked_body(&b"4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n0\r\n\r\n"[..]),
         Done(&b""[..], chunked_body));
     }
+
+    #[test]
+    fn message_head() {
+        assert_eq!(super::message_head(&b"POST /where?q=now HTTP/1.1\r\nContent-Type:plain/text\r\nContent-Length:3\r\n\r\nabc"[..]), Done(&b"abc"[..], MessageHead {
+            start_line: StartLine::RequestLine(RequestLine { method: "POST", request_target: "/where?q=now", version: HttpVersion { major: 1, minor: 1, } }),
+            headers: Headers(vec!(("Content-Type", "plain/text".to_string()), ("Content-Length", "3".to_string()))),
+        }));
+    }
+
 }
