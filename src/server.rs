@@ -2,11 +2,9 @@ extern crate nom;
 extern crate std;
 
 use std::collections::HashMap;
-use std::io::{Error, ErrorKind, Read, Write, Result};
+use std::io::{Error, Read, Write, Result};
 use std::net::{TcpStream, TcpListener};
 use std::{thread, str};
-use nom::IResult;
-use grammar::http_message;
 use api::*;
 use process::Process;
 use io::Buffer;
@@ -37,18 +35,9 @@ impl Server {
         where R: Read + Sized, F: FnMut(&mut R, Request) -> Result<usize> {
         let read = buffer.from(reader)?;
         buffer.read_from(|slice| {
-            match http_message(slice) {
-                IResult::Done(remainder, request) => {
-                    fun(reader, Request::from(request))?;
-                    Ok(slice.len() - remainder.len())
-                },
-                IResult::Incomplete(_) => {
-                    Ok(0)
-                },
-                IResult::Error(err) => {
-                    Err(Error::new(ErrorKind::Other, format!("{}", err)))
-                },
-            }
+            let (request, remainder) = Request::parse(slice)?;
+            fun(reader, request)?;
+            Ok(slice.len() - remainder.len())
         })?;
         Ok(read)
     }
@@ -82,7 +71,7 @@ impl Process<Error> for Server {
                         let mut handler = FileHandler::new(std::env::current_dir().unwrap());
                         Server::write(s, &mut handler, request)
                     }) {
-                        Ok(read) if read > 0 => { },
+                        Ok(read) if read > 0 => {},
                         _ => break,
                     }
                 }

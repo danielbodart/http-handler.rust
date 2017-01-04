@@ -1,9 +1,11 @@
 use std::path::{Path};
 use std::fs::{File, Metadata, canonicalize};
-use std::io::{Write, Result};
+use std::io::{Error, ErrorKind, Write, Result};
 use std::fmt;
+use nom::IResult;
 use regex::Regex;
 use ast::*;
+use grammar::*;
 
 
 pub trait HttpHandler {
@@ -134,6 +136,20 @@ impl<'a> Request<'a> {
         Request::new(method, url, Headers::new(), MessageBody::None)
     }
 
+    pub fn parse(slice: &'a [u8]) -> Result<(Request<'a>, &'a [u8])> {
+        match http_message(slice) {
+            IResult::Done(remainder, request) => {
+                Ok((Request::from(request), remainder))
+            },
+            IResult::Incomplete(needed) => {
+                Err(Error::new(ErrorKind::Other, format!("Needs more data: {:?}", needed)))
+            },
+            IResult::Error(err) => {
+                Err(Error::new(ErrorKind::Other, format!("{}", err)))
+            },
+        }
+    }
+
     pub fn get(url: &'a str) -> Request<'a> {
         Request::request("GET", url)
     }
@@ -236,7 +252,7 @@ impl<'a> Response<'a> {
         Response::response(404, "Not Found")
     }
 
-    pub fn method_not_allowed () -> Response<'a> {
+    pub fn method_not_allowed() -> Response<'a> {
         Response::response(405, "Method Not Allowed")
     }
 
