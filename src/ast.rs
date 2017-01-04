@@ -62,7 +62,7 @@ pub struct Headers<'a> (pub Vec<(&'a str, String)>);
 impl<'a> fmt::Display for Headers<'a> {
     fn fmt(&self, format: &mut fmt::Formatter) -> fmt::Result {
         for &(name, ref value) in &self.0[0..self.0.len()] {
-            try!(write!(format, "{}: {}\r\n", name, value));
+            write!(format, "{}: {}\r\n", name, value)?;
         }
         Ok(())
     }
@@ -196,8 +196,8 @@ impl<'a> fmt::Display for HttpMessage<'a> {
 impl<'a> WriteTo for HttpMessage<'a> {
     fn write_to(&mut self, write: &mut Write) -> Result<usize> {
         let text = format!("{}{}\r\n", self.start_line, self.headers);
-        let head = try!(write.write(text.as_bytes()));
-        let body = try!(self.body.write_to(write));
+        let head = write.write(text.as_bytes())?;
+        let body = self.body.write_to(write)?;
         Ok(head + body)
     }
 }
@@ -209,9 +209,9 @@ impl<'a> fmt::Display for ChunkExtensions<'a> {
     fn fmt(&self, format: &mut fmt::Formatter) -> fmt::Result {
         for &(name, ref option) in &self.0[0..self.0.len()] {
             if let Some(ref value) = *option {
-                try!(write!(format, ";{}={}", name, value));
+                write!(format, ";{}={}", name, value)?;
             } else {
-                try!(write!(format, ";{}", name));
+                write!(format, ";{}", name)?;
             }
         }
         Ok(())

@@ -26,12 +26,12 @@ impl<T: AsRef<Path>> FileHandler<T> {
     }
 
     pub fn get(&self, path: &str) -> Result<Response> {
-        let full_path = try!(canonicalize(self.base.as_ref().join(&path[1..])));
+        let full_path = canonicalize(self.base.as_ref().join(&path[1..]))?;
         if !full_path.starts_with(&self.base) {
             return Ok(Response::unauthorized().message("Not allowed outside of base"));
         }
-        let file: File = try!(File::open(&full_path));
-        let metadata: Metadata = try!(file.metadata());
+        let file: File = File::open(&full_path)?;
+        let metadata: Metadata = file.metadata()?;
         if metadata.is_dir() {
             return Ok(Response::not_found().message("Path denotes a directory"));
         }
@@ -101,17 +101,17 @@ impl<'a> Uri<'a> {
 impl<'a> fmt::Display for Uri<'a> {
     fn fmt(&self, format: &mut fmt::Formatter) -> fmt::Result {
         if let Some(scheme) = self.scheme {
-            try!(write!(format, "{}:", scheme));
+            write!(format, "{}:", scheme)?;
         }
         if let Some(authority) = self.authority {
-            try!(write!(format, "//{}", authority));
+            write!(format, "//{}", authority)?;
         }
-        try!(format.write_str(self.path));
+        format.write_str(self.path)?;
         if let Some(query) = self.query {
-            try!(write!(format, "?{}", query));
+            write!(format, "?{}", query)?;
         }
         if let Some(fragment) = self.fragment {
-            try!(write!(format, "#{}", fragment));
+            write!(format, "#{}", fragment)?;
         }
         Ok(())
     }
@@ -197,8 +197,8 @@ impl<'a> WriteTo for Request<'a> {
         let text = format!("{}{}\r\n",
                            RequestLine { method: self.method, request_target: self.uri.to_string().as_str(), version: HttpVersion { major: 1, minor: 1 } },
                            self.headers);
-        let head = try!(write.write(text.as_bytes()));
-        let body = try!(self.entity.write_to(write));
+        let head = write.write(text.as_bytes())?;
+        let body = self.entity.write_to(write)?;
         Ok(head + body)
     }
 }
@@ -324,8 +324,8 @@ impl<'a> WriteTo for Response<'a> {
         let text = format!("{}{}\r\n",
                            StatusLine { code: self.code, description: self.description, version: HttpVersion { major: 1, minor: 1 } },
                            self.headers);
-        let head = try!(write.write(text.as_bytes()));
-        let body = try!(self.entity.write_to(write));
+        let head = write.write(text.as_bytes())?;
+        let body = self.entity.write_to(write)?;
         Ok(head + body)
     }
 }

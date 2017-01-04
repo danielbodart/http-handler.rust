@@ -27,19 +27,19 @@ impl Server {
 
     fn listen(&mut self) -> Result<TcpListener> {
         let authority = (self.host.as_str(), self.port);
-        let listener: TcpListener = try!(TcpListener::bind(authority));
-        self.port = try!(listener.local_addr()).port();
+        let listener: TcpListener = TcpListener::bind(authority)?;
+        self.port = listener.local_addr()?.port();
         println!("listening on http://{}:{}/", self.host, self.port);
         Ok(listener)
     }
 
     fn read<R, F>(reader: &mut R, buffer: &mut Buffer, mut fun: F) -> Result<usize>
         where R: Read + Sized, F: FnMut(&mut R, Request) -> Result<usize> {
-        let read = try!(buffer.from(reader));
-        try!(buffer.read_from(|slice| {
+        let read = buffer.from(reader)?;
+        buffer.read_from(|slice| {
             match http_message(slice) {
                 IResult::Done(remainder, request) => {
-                    try!(fun(reader, Request::from(request)));
+                    fun(reader, Request::from(request))?;
                     Ok(slice.len() - remainder.len())
                 },
                 IResult::Incomplete(_) => {
@@ -49,7 +49,7 @@ impl Server {
                     Err(Error::new(ErrorKind::Other, format!("{}", err)))
                 },
             }
-        }));
+        })?;
         Ok(read)
     }
 
@@ -71,7 +71,7 @@ impl Process<Error> for Server {
         }
     }
     fn run(&mut self) -> Result<i32> {
-        let listener = try!(self.listen());
+        let listener = self.listen()?;
 
         for stream in listener.incoming() {
             thread::spawn(|| {
