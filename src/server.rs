@@ -2,7 +2,7 @@ extern crate nom;
 extern crate std;
 
 use std::collections::HashMap;
-use std::io::{Error, Read, Write, Result};
+use std::io::{Error, Read, Write, Result, BufRead, BufReader};
 use std::net::{TcpStream, TcpListener};
 use std::{thread, str};
 use api::*;
@@ -42,13 +42,25 @@ impl Server {
         Ok(read)
     }
 
+    fn read_buf<R, F>(reader: &mut R, mut fun: F) -> Result<usize>
+        where R: BufRead + Sized, F: FnMut(Request) -> Result<usize> {
+        let (read, consumed) = {
+            let slice = reader.fill_buf()?;
+            let (request, remainder) = Request::parse(slice)?;
+            fun(request)?;
+            (slice.len(), slice.len() - remainder.len())
+        };
+        reader.consume(consumed as usize);
+        Ok(read)
+    }
+
     fn write<'a, W, H>(write: &mut W, handler: &mut H, request: Request<'a>) -> Result<usize>
         where W: Write + Sized, H: HttpHandler + Sized {
         let mut response = handler.handle(request);
         response.write_to(write)
     }
 
-    fn split(stream:Result<TcpStream>) -> Result<(TcpStream, TcpStream)> {
+    fn split(stream: Result<TcpStream>) -> Result<(TcpStream, TcpStream)> {
         let a = stream?;
         Ok((a.try_clone()?, a))
     }
@@ -69,10 +81,10 @@ impl Process<Error> for Server {
 
         for stream in listener.incoming() {
             thread::spawn(|| {
-                let (mut reader, mut writer) = Server::split(stream).unwrap();
-                let mut buffer = Buffer::new(4096);
+                let (reader, mut writer) = Server::split(stream).unwrap();
+                let mut buffer = BufReader::new(reader);
                 loop {
-                    match Server::read(&mut reader, &mut buffer, |request| {
+                    match Server::read_buf(&mut buffer, |request| {
                         let mut handler = FileHandler::new(std::env::current_dir().unwrap());
                         Server::write(&mut writer, &mut handler, request)
                     }) {
