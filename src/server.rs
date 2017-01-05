@@ -32,11 +32,11 @@ impl Server {
     }
 
     fn read<R, F>(reader: &mut R, buffer: &mut Buffer, mut fun: F) -> Result<usize>
-        where R: Read + Sized, F: FnMut(&mut R, Request) -> Result<usize> {
+        where R: Read + Sized, F: FnMut(Request) -> Result<usize> {
         let read = buffer.from(reader)?;
         buffer.read_from(|slice| {
             let (request, remainder) = Request::parse(slice)?;
-            fun(reader, request)?;
+            fun(request)?;
             Ok(slice.len() - remainder.len())
         })?;
         Ok(read)
@@ -46,6 +46,11 @@ impl Server {
         where W: Write + Sized, H: HttpHandler + Sized {
         let mut response = handler.handle(request);
         response.write_to(write)
+    }
+
+    fn split(stream:Result<TcpStream>) -> Result<(TcpStream, TcpStream)> {
+        let a = stream?;
+        Ok((a.try_clone()?, a))
     }
 }
 
@@ -64,12 +69,12 @@ impl Process<Error> for Server {
 
         for stream in listener.incoming() {
             thread::spawn(|| {
-                let mut stream: TcpStream = stream.unwrap();
+                let (mut reader, mut writer) = Server::split(stream).unwrap();
                 let mut buffer = Buffer::new(4096);
                 loop {
-                    match Server::read(&mut stream, &mut buffer, |s, request| {
+                    match Server::read(&mut reader, &mut buffer, |request| {
                         let mut handler = FileHandler::new(std::env::current_dir().unwrap());
-                        Server::write(s, &mut handler, request)
+                        Server::write(&mut writer, &mut handler, request)
                     }) {
                         Ok(read) if read > 0 => {},
                         _ => break,
@@ -105,7 +110,7 @@ mod tests {
         let mut count = 0;
 
         while count < index.len() {
-            super::Server::read(&mut read, &mut buffer, |stream, message| {
+            super::Server::read(&mut read, &mut buffer, |message| {
                 assert_eq!(message, Request::from(http_message(index[count].as_bytes()).unwrap().1));
                 count += 1;
                 Ok(1)
