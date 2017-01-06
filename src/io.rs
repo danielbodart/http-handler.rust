@@ -7,6 +7,11 @@ pub trait ReadFrom {
         where F: FnMut(&[u8]) -> Result<usize>;
 }
 
+pub trait WriteInto {
+    fn write_into<F>(&mut self, fun: F) -> Result<usize>
+        where F: FnMut(&mut [u8]) -> Result<usize>;
+}
+
 #[derive(Debug)]
 pub struct Buffer {
     value: Vec<u8>,
@@ -53,15 +58,6 @@ impl Buffer {
         where R: Read + Sized {
         self.write_into(|slice| read.read(slice))
     }
-
-    pub fn write_into<F>(&mut self, mut fun: F) -> Result<usize>
-        where F: FnMut(&mut [u8]) -> Result<usize> {
-        let result = fun(self.as_write());
-        if let Ok(count) = result {
-            self.increment_write(count);
-        }
-        result
-    }
 }
 
 impl Read for Buffer {
@@ -94,6 +90,17 @@ impl ReadFrom for Buffer {
         let result = fun(self.as_read());
         if let Ok(count) = result {
             self.increment_read(count);
+        }
+        result
+    }
+}
+
+impl WriteInto for Buffer {
+    fn write_into<F>(&mut self, mut fun: F) -> Result<usize>
+        where F: FnMut(&mut [u8]) -> Result<usize> {
+        let result = fun(self.as_write());
+        if let Ok(count) = result {
+            self.increment_write(count);
         }
         result
     }
@@ -148,7 +155,7 @@ impl<T> Read for BufferedRead<T> where T: Read + Sized {
     }
 }
 
-impl <T> ReadFrom for BufferedRead<T> where T: Read + Sized {
+impl<T> ReadFrom for BufferedRead<T> where T: Read + Sized {
     fn read_from<F>(&mut self, fun: F) -> Result<usize>
         where F: FnMut(&[u8]) -> Result<usize> {
         self.fill()?;
