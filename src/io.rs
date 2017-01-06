@@ -20,7 +20,7 @@ pub struct Buffer {
 }
 
 impl Buffer {
-    pub fn new(capacity: usize) -> Buffer {
+    pub fn with_capacity(capacity: usize) -> Buffer {
         let mut value = Vec::with_capacity(capacity);
         unsafe { value.set_len(capacity) }
         Buffer {
@@ -128,7 +128,7 @@ impl<T> BufferedRead<T> where T: Read + Sized {
     pub fn new(inner: T) -> BufferedRead<T> {
         BufferedRead {
             inner: inner,
-            buffer: Buffer::new(4096),
+            buffer: Buffer::with_capacity(4096),
         }
     }
 
@@ -212,26 +212,26 @@ mod tests {
 
     #[test]
     fn supports_capacity() {
-        let buffer = Buffer::new(8);
+        let buffer = Buffer::with_capacity(8);
         assert_eq!(buffer.capacity(), 8);
     }
 
     #[test]
     fn when_empty_there_will_be_nothing_to_read() {
-        let buffer = Buffer::new(8);
+        let buffer = Buffer::with_capacity(8);
         let slice: &[u8] = buffer.as_read();
         assert_eq!(slice.len(), 0);
     }
 
     #[test]
     fn when_empty_the_write_slice_will_have_the_full_capacity() {
-        let mut buffer = Buffer::new(8);
+        let mut buffer = Buffer::with_capacity(8);
         assert_eq!(buffer.as_write().len(), 8);
     }
 
     #[test]
     fn if_you_write_data_it_becomes_available_to_read() {
-        let mut buffer = Buffer::new(8);
+        let mut buffer = Buffer::with_capacity(8);
         buffer.write_into(|slice| {
             slice[0] = 1;
             slice[1] = 2;

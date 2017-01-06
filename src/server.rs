@@ -70,7 +70,7 @@ impl Process<Error> for Server {
         for stream in listener.incoming() {
             thread::spawn(|| {
                 let (mut reader, mut writer) = Server::split(stream).unwrap();
-                let mut buffer = Buffer::new(4096);
+                let mut buffer = Buffer::with_capacity(4096);
                 loop {
                     match Server::read(&mut reader, &mut buffer, |request| {
                         let mut handler = FileHandler::new(std::env::current_dir().unwrap());
@@ -105,7 +105,7 @@ mod tests {
         let index = vec!(get, post, put, option);
         let requests = index.iter().fold(String::new(), |a, &v| a + v);
         let data = requests.as_bytes();
-        let mut buffer = Buffer::new(data.len());
+        let mut buffer = Buffer::with_capacity(data.len());
         let mut read = Fragmented::new(data, 10);
         let mut count = 0;
 
