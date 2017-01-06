@@ -1,5 +1,11 @@
 use std::usize;
-use std::io::{Read, Result};
+use std::io::{Read, BufRead, Write, Result};
+use std::cmp::min;
+
+pub trait ReadFrom {
+    fn read_from<F>(&mut self, fun: F) -> Result<usize>
+        where F: FnMut(&[u8]) -> Result<usize>;
+}
 
 #[derive(Debug)]
 pub struct Buffer {
@@ -43,7 +49,8 @@ impl Buffer {
         self.write_position += value;
     }
 
-    pub fn from<R>(&mut self, read: &mut R) -> Result<usize> where R: Read + Sized {
+    pub fn from<R>(&mut self, read: &mut R) -> Result<usize>
+        where R: Read + Sized {
         self.write_into(|slice| read.read(slice))
     }
 
@@ -55,14 +62,97 @@ impl Buffer {
         }
         result
     }
+}
 
-    pub fn read_from<F>(&mut self, mut fun: F) -> Result<usize>
+impl Read for Buffer {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+        self.read_from(|slice| {
+            let size = min(slice.len(), buf.len());
+            buf[..size].copy_from_slice(&slice[..size]);
+            Ok(size)
+        })
+    }
+}
+
+impl Write for Buffer {
+    fn write(&mut self, buf: &[u8]) -> Result<usize> {
+        self.write_into(|slice| {
+            let size = min(slice.len(), buf.len());
+            slice[..size].copy_from_slice(&buf[..size]);
+            Ok(size)
+        })
+    }
+
+    fn flush(&mut self) -> Result<()> {
+        Ok(())
+    }
+}
+
+impl ReadFrom for Buffer {
+    fn read_from<F>(&mut self, mut fun: F) -> Result<usize>
         where F: FnMut(&[u8]) -> Result<usize> {
         let result = fun(self.as_read());
         if let Ok(count) = result {
             self.increment_read(count);
         }
         result
+    }
+}
+
+impl ReadFrom for BufRead {
+    fn read_from<F>(&mut self, mut fun: F) -> Result<usize>
+        where F: FnMut(&[u8]) -> Result<usize> {
+        let result = fun(self.fill_buf()?);
+        if let Ok(count) = result {
+            self.consume(count);
+        }
+        result
+    }
+}
+
+/// Supports fragmented input unlike std::io::BufReader and is much simpler!
+#[derive(Debug)]
+pub struct BufferedRead<T> where T: Read + Sized {
+    inner: T,
+    buffer: Buffer,
+}
+
+impl<T> BufferedRead<T> where T: Read + Sized {
+    pub fn new(inner: T) -> BufferedRead<T> {
+        BufferedRead {
+            inner: inner,
+            buffer: Buffer::new(4096),
+        }
+    }
+
+    pub fn fill(&mut self) -> Result<usize> {
+        self.buffer.from(&mut self.inner)
+    }
+}
+
+impl<T> BufRead for BufferedRead<T> where T: Read + Sized {
+    fn fill_buf(&mut self) -> Result<&[u8]> {
+        self.fill()?;
+        Ok(self.buffer.as_read())
+    }
+
+    fn consume(&mut self, amt: usize) {
+        self.buffer.increment_read(amt);
+    }
+}
+
+impl<T> Read for BufferedRead<T> where T: Read + Sized {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+        self.fill()?;
+        self.buffer.read(buf)
+    }
+}
+
+impl <T> ReadFrom for BufferedRead<T> where T: Read + Sized {
+    fn read_from<F>(&mut self, fun: F) -> Result<usize>
+        where F: FnMut(&[u8]) -> Result<usize> {
+        self.fill()?;
+        self.buffer.read_from(fun)
     }
 }
 
