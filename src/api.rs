@@ -1,11 +1,12 @@
 use std::path::{Path};
 use std::fs::{File, Metadata, canonicalize};
-use std::io::{Error, ErrorKind, Write, Result};
+use std::io::{Error, ErrorKind, Read, Write, Result};
 use std::fmt;
 use nom::IResult;
 use regex::Regex;
 use ast::*;
 use grammar::*;
+use io::*;
 
 
 pub trait HttpHandler {
@@ -148,6 +149,30 @@ impl<'a> Request<'a> {
                 Err(Error::new(ErrorKind::Other, format!("{}", err)))
             },
         }
+    }
+
+    pub fn read<R, F>(reader: &mut R, buffer: &mut Buffer, mut fun: F) -> Result<usize>
+        where R: Read + Sized, F: FnMut(Request) -> Result<usize> {
+        let read = buffer.from(reader)?;
+        buffer.read_from(|slice|
+            match message_head(slice) {
+                IResult::Done(remainder, head) => {
+                    if let StartLine::RequestLine(line) = head.start_line {
+                        let r = Box::new(buffer);
+                        fun(Request::new(line.method, line.request_target, head.headers, MessageBody::Reader(r)))?;
+                        return Ok(slice.len() - remainder.len());
+                    }
+                    panic!("Can not convert Response to Request")
+                },
+                IResult::Incomplete(needed) => {
+                    return Err(Error::new(ErrorKind::Other, format!("Needs more data: {:?}", needed)));
+                },
+                IResult::Error(err) => {
+                    return Err(Error::new(ErrorKind::Other, format!("{}", err)));
+                },
+            }
+        )?;
+        Ok(read)
     }
 
     pub fn get(url: &'a str) -> Request<'a> {

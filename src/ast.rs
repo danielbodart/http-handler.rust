@@ -101,6 +101,8 @@ impl<'a> Headers<'a> {
     }
 }
 
+type SizedRead = Read + Sized;
+
 pub enum MessageBody<'a> {
     None,
     Slice(&'a [u8]),
