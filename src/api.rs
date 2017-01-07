@@ -158,8 +158,7 @@ impl<'a> Request<'a> {
             match message_head(slice) {
                 IResult::Done(remainder, head) => {
                     if let StartLine::RequestLine(line) = head.start_line {
-                        let r = Box::new(buffer);
-                        fun(Request::new(line.method, line.request_target, head.headers, MessageBody::Reader(r)))?;
+                        fun(Request::new(line.method, line.request_target, head.headers, MessageBody::None))?;
                         return Ok(slice.len() - remainder.len());
                     }
                     panic!("Can not convert Response to Request")
@@ -329,7 +328,6 @@ impl<'a> Response<'a> {
         match self.entity {
             MessageBody::None => { Some(0) }
             MessageBody::Slice(ref slice) => { Some(slice.len() as u64) }
-            MessageBody::Vector(ref vector) => { Some(vector.len() as u64) }
             _ => None
         }
     }

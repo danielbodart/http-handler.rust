@@ -106,7 +106,6 @@ type SizedRead = Read + Sized;
 pub enum MessageBody<'a> {
     None,
     Slice(&'a [u8]),
-    Vector(Vec<u8>),
     Reader(Box<Read>),
 }
 
@@ -115,13 +114,6 @@ impl<'a> MessageBody<'a> {
         match *self {
             MessageBody::Reader(_) => {
                 format.write_str("streaming")
-            },
-            MessageBody::Vector(ref vector) => {
-                if let Ok(result) = String::from_utf8(vector.clone()) {
-                    format.write_str(result.as_str())
-                } else {
-                    Ok(())
-                }
             },
             MessageBody::Slice(ref slice) => {
                 if let Ok(result) = str::from_utf8(slice) {
@@ -140,7 +132,6 @@ impl<'a> PartialEq for MessageBody<'a> {
         match (self, other) {
             (&MessageBody::None, &MessageBody::None) => true,
             (&MessageBody::Slice(ref slice_a), &MessageBody::Slice(ref slice_b)) => slice_a == slice_b,
-            (&MessageBody::Vector(ref vector_a), &MessageBody::Vector(ref vector_b)) => vector_a == vector_b,
             (&MessageBody::Reader(_), &MessageBody::Reader(_)) => true,
             _ => false
         }
@@ -170,9 +161,6 @@ impl<'a> WriteTo for MessageBody<'a> {
                         c as usize
                     }
                 })
-            },
-            MessageBody::Vector(ref vector) => {
-                writer.write(&vector[..])
             },
             MessageBody::Slice(ref slice) => {
                 writer.write(&slice)
