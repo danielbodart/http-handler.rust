@@ -1,6 +1,6 @@
 use std::ascii::AsciiExt;
 use std::{fmt, str, usize};
-use std::io::{Empty, Read, Write, Result, copy, empty};
+use std::io::{Read, Write, Result, copy};
 use api::{WriteTo};
 
 #[derive(PartialEq, Debug)]
@@ -107,8 +107,6 @@ pub enum MessageBody<'a> {
     Reader(Box<Read>),
 }
 
-pub struct MessageBody2<R>(R) where R: Read;
-
 impl<'a> MessageBody<'a> {
     fn format(&self, format: &mut fmt::Formatter) -> fmt::Result {
         match *self {
@@ -138,56 +136,9 @@ impl<'a> PartialEq for MessageBody<'a> {
     }
 }
 
-impl PartialEq for MessageBody2<Empty> {
-    #[allow(unused_variables)]
-    fn eq(&self, other: &MessageBody2<Empty>) -> bool {
-        true
-    }
-}
-
-impl<'a> PartialEq for MessageBody2<&'a [u8]> {
-    fn eq(&self, other: &MessageBody2<&'a [u8]>) -> bool {
-        self.0 == other.0
-    }
-}
-
 impl<'a> fmt::Display for MessageBody<'a> {
     fn fmt(&self, format: &mut fmt::Formatter) -> fmt::Result {
         self.format(format)
-    }
-}
-
-impl fmt::Display for MessageBody2<Empty> {
-    #[allow(unused_variables)]
-    fn fmt(&self, format: &mut fmt::Formatter) -> fmt::Result {
-        Ok(())
-    }
-}
-
-impl<'a> fmt::Display for MessageBody2<&'a [u8]> {
-    fn fmt(&self, format: &mut fmt::Formatter) -> fmt::Result {
-        if let Ok(result) = str::from_utf8(self.0) {
-            format.write_str(result)
-        } else {
-            Ok(())
-        }
-    }
-}
-
-impl fmt::Debug for MessageBody2<Empty> {
-    #[allow(unused_variables)]
-    fn fmt(&self, format: &mut fmt::Formatter) -> fmt::Result {
-        Ok(())
-    }
-}
-
-impl<'a> fmt::Debug for MessageBody2<&'a [u8]> {
-    fn fmt(&self, format: &mut fmt::Formatter) -> fmt::Result {
-        if let Ok(result) = str::from_utf8(self.0) {
-            format.write_str(result)
-        } else {
-            Ok(())
-        }
     }
 }
 
@@ -214,18 +165,6 @@ impl<'a> WriteTo for MessageBody<'a> {
             },
             MessageBody::None => Ok(0),
         }
-    }
-}
-
-impl<R> WriteTo for MessageBody2<R> where R:Read {
-    fn write_to(&mut self, writer: &mut Write) -> Result<usize> {
-        copy(&mut self.0, writer).map(|c| {
-            if c > usize::MAX as u64 {
-                usize::MAX
-            } else {
-                c as usize
-            }
-        })
     }
 }
 
