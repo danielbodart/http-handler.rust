@@ -1,11 +1,11 @@
 use std::path::{Path};
 use std::fs::{File, Metadata, canonicalize};
-use std::io::{Error, ErrorKind, Read, Write, Result};
+use std::io::{Read, Write, Result};
 use std::fmt;
-use nom::IResult;
 use regex::Regex;
 use ast::*;
 use grammar::*;
+use parser::result;
 
 
 pub trait HttpHandler {
@@ -137,40 +137,21 @@ impl<'a> Request<'a> {
     }
 
     pub fn parse(slice: &'a [u8]) -> Result<(Request<'a>, &'a [u8])> {
-        match http_message(slice) {
-            IResult::Done(remainder, request) => {
-                Ok((Request::from(request), remainder))
-            },
-            IResult::Incomplete(needed) => {
-                Err(Error::new(ErrorKind::Other, format!("Needs more data: {:?}", needed)))
-            },
-            IResult::Error(err) => {
-                Err(Error::new(ErrorKind::Other, format!("{}", err)))
-            },
-        }
+        result(http_message(slice)).map(|(request, remainder)| (Request::from(request), remainder))
     }
 
     pub fn read<R>(slice: &'a [u8], reader: &'a mut R) -> Result<(usize, Request<'a>)> where R: Read {
-        match message_head(slice) {
-            IResult::Done(remainder, head) => {
-                if let StartLine::RequestLine(line) = head.start_line {
-                    let headers = head.headers;
-                    let (body_read, body) = MessageBody::read(&headers, remainder, reader);
-                    let request = Request::new(line.method, line.request_target, headers, body);
-                    let head_length = slice.len() - remainder.len();
-                    return Ok((head_length + body_read, request));
-                }
-                panic!("Can not convert Response to Request")
-            },
-            IResult::Incomplete(needed) => {
-                return Err(Error::new(ErrorKind::Other, format!("Needs more data: {:?}", needed)));
-            },
-            IResult::Error(err) => {
-                return Err(Error::new(ErrorKind::Other, format!("{}", err)));
-            },
-        }
+        result(message_head(slice)).map(move |(head, remainder)| {
+            if let StartLine::RequestLine(line) = head.start_line {
+                let headers = head.headers;
+                let (body_read, body) = MessageBody::read(&headers, remainder, reader);
+                let request = Request::new(line.method, line.request_target, headers, body);
+                let head_length = slice.len() - remainder.len();
+                return (head_length + body_read, request);
+            }
+            panic!("Can not convert Response to Request")
+        })
     }
-
 
     pub fn get(url: &'a str) -> Request<'a> {
         Request::request("GET", url)

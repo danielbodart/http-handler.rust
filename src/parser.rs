@@ -1,5 +1,9 @@
 extern crate nom;
 
+use std::io::{Error, ErrorKind, Result};
+use std::fmt;
+use nom::IResult;
+
 #[macro_export] macro_rules! char_predicate {
     ($i:expr, $c: expr) => {
         {
@@ -14,4 +18,18 @@ extern crate nom;
             }
         }
     };
+}
+
+pub fn result<I, O>(result: IResult<I, O>) -> Result<(O, I)> where I: fmt::Debug {
+    match result {
+        IResult::Done(remainder, output) => {
+            Ok((output, remainder))
+        },
+        IResult::Incomplete(needed) => {
+            Err(Error::new(ErrorKind::Other, format!("Needs more data: {:?}", needed)))
+        },
+        IResult::Error(err) => {
+            Err(Error::new(ErrorKind::Other, format!("{}", err)))
+        },
+    }
 }
