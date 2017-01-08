@@ -140,14 +140,14 @@ impl<'a> Request<'a> {
         result(http_message(slice)).map(|(request, remainder)| (Request::from(request), remainder))
     }
 
-    pub fn read<R>(slice: &'a [u8], reader: &'a mut R) -> Result<(usize, Request<'a>)> where R: Read {
+    pub fn read<R>(slice: &'a [u8], reader: &'a mut R) -> Result<(Request<'a>, usize)> where R: Read {
         result(message_head(slice)).map(move |(head, remainder)| {
             if let StartLine::RequestLine(line) = head.start_line {
                 let headers = head.headers;
-                let (body_read, body) = MessageBody::read(&headers, remainder, reader);
+                let (body, body_read) = MessageBody::read(&headers, remainder, reader);
                 let request = Request::new(line.method, line.request_target, headers, body);
                 let head_length = slice.len() - remainder.len();
-                return (head_length + body_read, request);
+                return (request, head_length + body_read);
             }
             panic!("Can not convert Response to Request")
         })

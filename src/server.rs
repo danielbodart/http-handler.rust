@@ -35,7 +35,7 @@ impl Server {
         where R: Read + Sized, F: FnMut(&mut Request) -> Result<usize> {
         let read = buffer.from(reader)?;
         buffer.read_from(|slice| {
-            let (count, mut request) = Request::read(slice, reader)?;
+            let (mut request, count) = Request::read(slice, reader)?;
             fun(&mut request)?;
             Ok(count)
         })?;

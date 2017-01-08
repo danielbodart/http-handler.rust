@@ -107,17 +107,19 @@ pub enum MessageBody<'a> {
 }
 
 impl<'a> MessageBody<'a> {
-    pub fn read<R>(headers: &Headers, slice: &'a [u8], reader: &'a mut R) -> (usize, MessageBody<'a>) where R: Read {
+    pub fn read<R>(headers: &Headers, slice: &'a [u8], reader: &'a mut R) -> (MessageBody<'a>, usize) where R: Read {
         match headers.content_length() {
             Some(body_length) if body_length > 0 => {
-                if body_length <= slice.len() as u64 {
-                    (body_length as usize, MessageBody::Slice(&slice[..body_length as usize]))
+                let slice_length = slice.len() as u64;
+                if body_length <= slice_length {
+                    let length = body_length as usize;
+                    (MessageBody::Slice(&slice[..length]), length)
                 } else {
-                    let more = reader.take(body_length - slice.len() as u64);
-                    (slice.len(), MessageBody::Reader(Box::new(slice.chain(more))))
+                    let more = reader.take(body_length - slice_length);
+                    (MessageBody::Reader(Box::new(slice.chain(more))), slice.len())
                 }
             }
-            _ => (0, MessageBody::None)
+            _ => (MessageBody::None, 0)
         }
     }
 
