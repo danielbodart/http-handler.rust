@@ -1,6 +1,6 @@
 use std::ascii::AsciiExt;
 use std::{fmt, str, usize};
-use std::io::{Read, Write, Result, copy};
+use std::io::{Read, Write, Result, copy, sink};
 use api::{WriteTo};
 
 #[derive(PartialEq, Debug)]
@@ -136,6 +136,15 @@ impl<'a> MessageBody<'a> {
                 }
             },
             _ => Ok(()),
+        }
+    }
+
+    pub fn drain(self) -> Result<u64> {
+        match self {
+            MessageBody::Reader(mut reader) => {
+                copy(&mut reader, &mut sink())
+            },
+            _ => Ok(0),
         }
     }
 }
