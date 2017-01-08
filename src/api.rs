@@ -150,17 +150,15 @@ impl<'a> Request<'a> {
         }
     }
 
-    pub fn read<R, F>(slice: &'a [u8], reader: &mut R, fun: &mut F) -> Result<usize>
-        where R: Read, F: FnMut(&mut Request) -> Result<usize> {
+    pub fn read<R>(slice: &'a [u8], reader: &'a mut R) -> Result<(usize, Request<'a>)> where R: Read {
         match message_head(slice) {
             IResult::Done(remainder, head) => {
                 if let StartLine::RequestLine(line) = head.start_line {
                     let headers = head.headers;
-                    let (body_read, body) = MessageBody::new(&headers, remainder, reader);
-                    let mut request = Request::new(line.method, line.request_target, headers, body);
-                    fun(&mut request)?;
+                    let (body_read, body) = MessageBody::read(&headers, remainder, reader);
+                    let request = Request::new(line.method, line.request_target, headers, body);
                     let head_length = slice.len() - remainder.len();
-                    return Ok(head_length + body_read);
+                    return Ok((head_length + body_read, request));
                 }
                 panic!("Can not convert Response to Request")
             },

@@ -107,7 +107,7 @@ pub enum MessageBody<'a> {
 }
 
 impl<'a> MessageBody<'a> {
-    pub fn new<R>(headers: &Headers, slice: &'a [u8], reader: &'a mut R) -> (usize, MessageBody<'a>) where R: Read {
+    pub fn read<R>(headers: &Headers, slice: &'a [u8], reader: &'a mut R) -> (usize, MessageBody<'a>) where R: Read {
         match headers.content_length() {
             Some(body_length) if body_length > 0 => {
                 if body_length <= slice.len() as u64 {
