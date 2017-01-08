@@ -83,10 +83,9 @@ impl<'a> Headers<'a> {
         &self.0
     }
 
-    pub fn content_length(&self) -> usize {
+    pub fn content_length(&self) -> Option<u64> {
         self.get("Content-Length").
-            and_then(|value| value.parse().ok()).
-            unwrap_or(0)
+            and_then(|value| value.parse().ok())
     }
 
     pub fn replace(&mut self, name: &'a str, value: String) -> &mut Headers<'a> {
@@ -108,6 +107,20 @@ pub enum MessageBody<'a> {
 }
 
 impl<'a> MessageBody<'a> {
+    pub fn new<R>(headers: &Headers, slice: &'a [u8], reader: &'a mut R) -> (usize, MessageBody<'a>) where R: Read {
+        match headers.content_length() {
+            Some(body_length) if body_length > 0 => {
+                if body_length <= slice.len() as u64 {
+                    (body_length as usize, MessageBody::Slice(&slice[..body_length as usize]))
+                } else {
+                    let more = reader.take(body_length - slice.len() as u64);
+                    (slice.len(), MessageBody::Reader(Box::new(slice.chain(more))))
+                }
+            }
+            _ => (0, MessageBody::None)
+        }
+    }
+
     fn format(&self, format: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             MessageBody::Reader(_) => {

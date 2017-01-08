@@ -116,15 +116,15 @@ named!(header_field <(&str, String)>, do_parse!(
   ));
 
 pub fn message_body<'a>(slice: &'a [u8], headers: &Headers<'a>) -> IResult<&'a [u8], MessageBody<'a>> {
-    let length = headers.content_length();
-    if length == 0 {
-        IResult::Done(slice, MessageBody::None)
-    } else {
-        match take!(slice, length) {
-            IResult::Done(rest, body) => IResult::Done(rest, MessageBody::Slice(body)),
-            IResult::Error(e) => IResult::Error(e),
-            IResult::Incomplete(n) => IResult::Incomplete(n),
+    match headers.content_length() {
+        Some(length) if length > 0 => {
+            match take!(slice, length) {
+                IResult::Done(rest, body) => IResult::Done(rest, MessageBody::Slice(body)),
+                IResult::Error(e) => IResult::Error(e),
+                IResult::Incomplete(n) => IResult::Incomplete(n),
+            }
         }
+        _ => IResult::Done(slice, MessageBody::None)
     }
 }
 

@@ -159,21 +159,9 @@ impl<'a> Request<'a> {
                 IResult::Done(remainder, head) => {
                     if let StartLine::RequestLine(line) = head.start_line {
                         let head_length = slice.len() - remainder.len();
-                        let (body_read, body) = {
-                            let body_length = head.headers.content_length();
-                            if body_length == 0 {
-                                (0, MessageBody::None)
-                            } else {
-                                if body_length <= remainder.len() {
-                                    (body_length, MessageBody::Slice(&remainder[..body_length]))
-                                } else {
-                                    let x = reader.take((body_length - remainder.len()) as u64);
-                                    let y = remainder.chain(x);
-                                    (remainder.len(), MessageBody::Reader(Box::new(y)))
-                                }
-                            }
-                        };
-                        let mut request = Request::new(line.method, line.request_target, head.headers, body);
+                        let headers = head.headers;
+                        let (body_read, body) = MessageBody::new(&headers, remainder, reader);
+                        let mut request = Request::new(line.method, line.request_target, headers, body);
                         fun(&mut request)?;
                         return Ok(head_length + body_read);
                     }
@@ -189,6 +177,8 @@ impl<'a> Request<'a> {
         )?;
         Ok(read)
     }
+
+
 
     pub fn get(url: &'a str) -> Request<'a> {
         Request::request("GET", url)
