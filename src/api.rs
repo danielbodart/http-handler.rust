@@ -6,7 +6,6 @@ use nom::IResult;
 use regex::Regex;
 use ast::*;
 use grammar::*;
-use io::*;
 
 
 pub trait HttpHandler {
@@ -151,33 +150,28 @@ impl<'a> Request<'a> {
         }
     }
 
-    pub fn read<R, F>(reader: &mut R, buffer: &mut Buffer, mut fun: F) -> Result<usize>
-        where R:Read, F: FnMut(&mut Request) -> Result<usize> {
-        let read = buffer.from(reader)?;
-        buffer.read_from(move |slice|
-            match message_head(slice) {
-                IResult::Done(remainder, head) => {
-                    if let StartLine::RequestLine(line) = head.start_line {
-                        let head_length = slice.len() - remainder.len();
-                        let headers = head.headers;
-                        let (body_read, body) = MessageBody::new(&headers, remainder, reader);
-                        let mut request = Request::new(line.method, line.request_target, headers, body);
-                        fun(&mut request)?;
-                        return Ok(head_length + body_read);
-                    }
-                    panic!("Can not convert Response to Request")
-                },
-                IResult::Incomplete(needed) => {
-                    return Err(Error::new(ErrorKind::Other, format!("Needs more data: {:?}", needed)));
-                },
-                IResult::Error(err) => {
-                    return Err(Error::new(ErrorKind::Other, format!("{}", err)));
-                },
-            }
-        )?;
-        Ok(read)
+    pub fn read<R, F>(slice: &'a [u8], reader: &mut R, fun: &mut F) -> Result<usize>
+        where R: Read, F: FnMut(&mut Request) -> Result<usize> {
+        match message_head(slice) {
+            IResult::Done(remainder, head) => {
+                if let StartLine::RequestLine(line) = head.start_line {
+                    let headers = head.headers;
+                    let (body_read, body) = MessageBody::new(&headers, remainder, reader);
+                    let mut request = Request::new(line.method, line.request_target, headers, body);
+                    fun(&mut request)?;
+                    let head_length = slice.len() - remainder.len();
+                    return Ok(head_length + body_read);
+                }
+                panic!("Can not convert Response to Request")
+            },
+            IResult::Incomplete(needed) => {
+                return Err(Error::new(ErrorKind::Other, format!("Needs more data: {:?}", needed)));
+            },
+            IResult::Error(err) => {
+                return Err(Error::new(ErrorKind::Other, format!("{}", err)));
+            },
+        }
     }
-
 
 
     pub fn get(url: &'a str) -> Request<'a> {

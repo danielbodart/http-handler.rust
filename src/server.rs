@@ -34,11 +34,7 @@ impl Server {
     fn read<R, F>(reader: &mut R, buffer: &mut Buffer, mut fun: F) -> Result<usize>
         where R: Read + Sized, F: FnMut(&mut Request) -> Result<usize> {
         let read = buffer.from(reader)?;
-        buffer.read_from(|slice| {
-            let (mut request, remainder) = Request::parse(slice)?;
-            fun(&mut request)?;
-            Ok(slice.len() - remainder.len())
-        })?;
+        buffer.read_from(|slice| Request::read(slice, reader, &mut fun))?;
         Ok(read)
     }
 
@@ -72,7 +68,7 @@ impl Process<Error> for Server {
                 let (mut reader, mut writer) = Server::split(stream).unwrap();
                 let mut buffer = Buffer::with_capacity(4096);
                 loop {
-                    match Request::read(&mut reader, &mut buffer, |mut request| {
+                    match Server::read(&mut reader, &mut buffer, |mut request| {
                         let mut handler = FileHandler::new(std::env::current_dir().unwrap());
                         Server::write(&mut writer, &mut handler, &mut request)
                     }) {
