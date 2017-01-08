@@ -83,7 +83,7 @@ impl<'a> Headers<'a> {
         &self.0
     }
 
-    pub fn content_length(&self) -> u64 {
+    pub fn content_length(&self) -> usize {
         self.get("Content-Length").
             and_then(|value| value.parse().ok()).
             unwrap_or(0)
@@ -104,7 +104,7 @@ impl<'a> Headers<'a> {
 pub enum MessageBody<'a> {
     None,
     Slice(&'a [u8]),
-    Reader(Box<Read>),
+    Reader(Box<Read + 'a>),
 }
 
 impl<'a> MessageBody<'a> {
@@ -120,7 +120,7 @@ impl<'a> MessageBody<'a> {
                     Ok(())
                 }
             },
-            MessageBody::None => Ok(()),
+            _ => Ok(()),
         }
     }
 }
@@ -163,7 +163,7 @@ impl<'a> WriteTo for MessageBody<'a> {
             MessageBody::Slice(ref slice) => {
                 writer.write(&slice)
             },
-            MessageBody::None => Ok(0),
+            _ => Ok(0),
         }
     }
 }

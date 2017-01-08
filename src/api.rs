@@ -10,7 +10,7 @@ use io::*;
 
 
 pub trait HttpHandler {
-    fn handle(&mut self, request: Request) -> Response;
+    fn handle(&mut self, request: &mut Request) -> Response;
 }
 
 pub trait WriteTo {
@@ -46,8 +46,8 @@ impl<T: AsRef<Path>> FileHandler<T> {
 }
 
 impl<T: AsRef<Path>> HttpHandler for FileHandler<T> {
-    fn handle(&mut self, request: Request) -> Response {
-        match request {
+    fn handle(&mut self, request: &mut Request) -> Response {
+        match *request {
             Request { method: "GET", uri: Uri { path, .. }, .. } => { return self.get(path).unwrap_or(Response::not_found().message("Not Found")) }
             _ => { Response::method_not_allowed() }
         }
@@ -67,7 +67,7 @@ impl<H> LogHandler<H> where H: HttpHandler {
 }
 
 impl<H> HttpHandler for LogHandler<H> where H: HttpHandler {
-    fn handle(&mut self, request: Request) -> Response {
+    fn handle(&mut self, request: &mut Request) -> Response {
         let r = format!("{}", request);
         let response = self.handler.handle(request);
         print!("{}{}\n\n\n", r, response);
@@ -152,14 +152,30 @@ impl<'a> Request<'a> {
     }
 
     pub fn read<R, F>(reader: &mut R, buffer: &mut Buffer, mut fun: F) -> Result<usize>
-        where R: Read + Sized, F: FnMut(Request) -> Result<usize> {
+        where R:Read, F: FnMut(&mut Request) -> Result<usize> {
         let read = buffer.from(reader)?;
-        buffer.read_from(|slice|
+        buffer.read_from(move |slice|
             match message_head(slice) {
                 IResult::Done(remainder, head) => {
                     if let StartLine::RequestLine(line) = head.start_line {
-                        fun(Request::new(line.method, line.request_target, head.headers, MessageBody::None))?;
-                        return Ok(slice.len() - remainder.len());
+                        let head_length = slice.len() - remainder.len();
+                        let (body_read, body) = {
+                            let body_length = head.headers.content_length();
+                            if body_length == 0 {
+                                (0, MessageBody::None)
+                            } else {
+                                if body_length <= remainder.len() {
+                                    (body_length, MessageBody::Slice(&remainder[..body_length]))
+                                } else {
+                                    let x = reader.take((body_length - remainder.len()) as u64);
+                                    let y = remainder.chain(x);
+                                    (remainder.len(), MessageBody::Reader(Box::new(y)))
+                                }
+                            }
+                        };
+                        let mut request = Request::new(line.method, line.request_target, head.headers, body);
+                        fun(&mut request)?;
+                        return Ok(head_length + body_read);
                     }
                     panic!("Can not convert Response to Request")
                 },

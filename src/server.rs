@@ -32,17 +32,17 @@ impl Server {
     }
 
     fn read<R, F>(reader: &mut R, buffer: &mut Buffer, mut fun: F) -> Result<usize>
-        where R: Read + Sized, F: FnMut(Request) -> Result<usize> {
+        where R: Read + Sized, F: FnMut(&mut Request) -> Result<usize> {
         let read = buffer.from(reader)?;
         buffer.read_from(|slice| {
-            let (request, remainder) = Request::parse(slice)?;
-            fun(request)?;
+            let (mut request, remainder) = Request::parse(slice)?;
+            fun(&mut request)?;
             Ok(slice.len() - remainder.len())
         })?;
         Ok(read)
     }
 
-    fn write<'a, W, H>(write: &mut W, handler: &mut H, request: Request<'a>) -> Result<usize>
+    fn write<'a, W, H>(write: &mut W, handler: &mut H, request: &mut Request<'a>) -> Result<usize>
         where W: Write + Sized, H: HttpHandler + Sized {
         let mut response = handler.handle(request);
         response.write_to(write)
@@ -72,9 +72,9 @@ impl Process<Error> for Server {
                 let (mut reader, mut writer) = Server::split(stream).unwrap();
                 let mut buffer = Buffer::with_capacity(4096);
                 loop {
-                    match Server::read(&mut reader, &mut buffer, |request| {
+                    match Request::read(&mut reader, &mut buffer, |mut request| {
                         let mut handler = FileHandler::new(std::env::current_dir().unwrap());
-                        Server::write(&mut writer, &mut handler, request)
+                        Server::write(&mut writer, &mut handler, &mut request)
                     }) {
                         Ok(read) if read > 0 => {},
                         _ => break,
@@ -111,7 +111,7 @@ mod tests {
 
         while count < index.len() {
             super::Server::read(&mut read, &mut buffer, |message| {
-                assert_eq!(message, Request::from(http_message(index[count].as_bytes()).unwrap().1));
+                assert_eq!(*message, Request::from(http_message(index[count].as_bytes()).unwrap().1));
                 count += 1;
                 Ok(1)
             });
