@@ -1,26 +1,50 @@
 extern crate nom;
 extern crate std;
 
-use std::collections::HashMap;
-use std::io::{Error, Read, Write, Result};
+use std::io::{Read, Write, Result};
 use std::net::{TcpStream, TcpListener};
 use std::{thread, str};
+use std::sync::Arc;
+use std::marker::{Send};
 use api::*;
-use process::Process;
 use io::*;
 
 pub struct Server {
-    port: u16,
     host: String,
+    port: u16,
 }
 
 impl Server {
-    fn port(env: &HashMap<String, String>) -> u16 {
-        env.get("PORT").and_then(|value| value.parse().ok()).unwrap_or(8080)
+    pub fn new(host:String, port:u16) -> Server {
+        Server {
+            host: host,
+            port: port,
+        }
     }
 
-    fn host(env: &HashMap<String, String>) -> String {
-        env.get("HOST").unwrap_or(&"0.0.0.0".to_string()).clone()
+    pub fn handler<F, H>(&mut self, fun:F) -> Result<()>
+        where H:HttpHandler, F:Fn() -> H + Send + Sync + 'static{
+        let listener = self.listen()?;
+        let fun = Arc::new(fun);
+
+        for stream in listener.incoming() {
+            let fun = fun.clone();
+            thread::spawn(move || {
+                let (mut reader, mut writer) = Server::split(stream).unwrap();
+                let mut buffer = Buffer::with_capacity(4096);
+                let mut handler = fun();
+                loop {
+                    match Server::read(&mut reader, &mut buffer, |mut request| {
+                        Server::write(&mut writer, &mut handler, &mut request)
+                    }) {
+                        Ok(read) if read > 0 => {},
+                        _ => break,
+                    }
+                }
+            });
+        }
+        Ok(())
+
     }
 
     fn listen(&mut self) -> Result<TcpListener> {
@@ -55,37 +79,6 @@ impl Server {
     }
 }
 
-
-impl Process<Error> for Server {
-    fn new(args: Vec<String>, env: HashMap<String, String>) -> Server {
-        assert_eq!(args.len(), 1);
-
-        Server {
-            port: Server::port(&env),
-            host: Server::host(&env),
-        }
-    }
-    fn run(&mut self) -> Result<i32> {
-        let listener = self.listen()?;
-
-        for stream in listener.incoming() {
-            thread::spawn(|| {
-                let (mut reader, mut writer) = Server::split(stream).unwrap();
-                let mut buffer = Buffer::with_capacity(4096);
-                loop {
-                    match Server::read(&mut reader, &mut buffer, |mut request| {
-                        let mut handler = FileHandler::new(std::env::current_dir().unwrap());
-                        Server::write(&mut writer, &mut handler, &mut request)
-                    }) {
-                        Ok(read) if read > 0 => {},
-                        _ => break,
-                    }
-                }
-            });
-        }
-        Ok(0)
-    }
-}
 
 
 #[cfg(test)]
