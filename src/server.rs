@@ -36,8 +36,8 @@ impl Server {
                 loop {
                     match Server::read(&mut reader, &mut buffer, |mut message| {
                         if let Message::Request(ref mut request) = *message {
-                            handler.handle(request, |mut response| {
-                                response.write_to(&mut writer).expect("Should be able to write");
+                            handler.handle(request, |response| {
+                                response.write_to(&mut writer)
                             });
                         }
                     }) {
@@ -73,6 +73,26 @@ impl Server {
     fn split(stream: Result<TcpStream>) -> Result<(TcpStream, TcpStream)> {
         let a = stream?;
         Ok((a.try_clone()?, a))
+    }
+}
+
+pub struct Client {}
+
+impl HttpHandler for Client{
+    fn handle<F>(&mut self, request: &mut Request, mut fun: F)  -> Result<usize>
+        where F: FnMut(&mut Response) -> Result<usize> + Sized {
+        let stream = TcpStream::connect(request.get_header("Host").unwrap());
+
+        let (mut reader, mut writer) = Server::split(stream)?;
+        let mut buffer = Buffer::with_capacity(4096);
+
+        request.write_to(&mut writer);
+
+        Server::read(&mut reader, &mut buffer, |mut message| {
+            if let Message::Response(ref mut response) = *message {
+                fun(response);
+            }
+        })
     }
 }
 
