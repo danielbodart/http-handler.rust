@@ -9,8 +9,8 @@ use parser::result;
 
 
 pub trait HttpHandler {
-    fn handle<F>(&mut self, request: &mut Request, fun: F) -> Result<usize>
-        where F: FnMut(&mut Response) -> Result<usize> + Sized;
+    fn handle<F>(&mut self, request: &mut Request, fun: F) -> Result<()>
+        where F: FnMut(&mut Response) -> Result<()> + Sized;
 }
 
 pub trait WriteTo {
@@ -46,8 +46,8 @@ impl<T: AsRef<Path>> FileHandler<T> {
 }
 
 impl<T: AsRef<Path>> HttpHandler for FileHandler<T> {
-    fn handle<F>(&mut self, request: &mut Request, mut fun: F) -> Result<usize>
-        where F: FnMut(&mut Response) -> Result<usize> + Sized {
+    fn handle<F>(&mut self, request: &mut Request, mut fun: F) -> Result<()>
+        where F: FnMut(&mut Response) -> Result<()> + Sized {
         fun(&mut match *request {
             Request { method: "GET", uri: Uri { path, .. }, .. } => { self.get(path).unwrap_or(Response::not_found().message("Not Found")) }
             _ => { Response::method_not_allowed() }
@@ -68,8 +68,8 @@ impl<H> LogHandler<H> where H: HttpHandler {
 }
 
 impl<H> HttpHandler for LogHandler<H> where H: HttpHandler {
-    fn handle<F>(&mut self, request: &mut Request, mut fun: F) -> Result<usize>
-        where F: FnMut(&mut Response) -> Result<usize> + Sized {
+    fn handle<F>(&mut self, request: &mut Request, mut fun: F) -> Result<()>
+        where F: FnMut(&mut Response) -> Result<()> + Sized {
         let r = format!("{}", request);
         self.handler.handle(request, |response| {
             print!("{}{}\n\n\n", r, response);

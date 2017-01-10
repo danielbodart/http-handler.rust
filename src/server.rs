@@ -36,10 +36,11 @@ impl Server {
                 loop {
                     match Server::read(&mut reader, &mut buffer, |mut message| {
                         if let Message::Request(ref mut request) = *message {
-                            handler.handle(request, |response| {
-                                response.write_to(&mut writer)
+                            return handler.handle(request, |response| {
+                                unit(response.write_to(&mut writer))
                             });
                         }
+                        Ok(())
                     }) {
                         Ok(read) if read > 0 => continue,
                         _ => return Ok(()),
@@ -59,11 +60,11 @@ impl Server {
     }
 
     fn read<R, F>(reader: &mut R, buffer: &mut Buffer, mut fun: F) -> Result<usize>
-        where R: Read + Sized, F: FnMut(&mut Message) -> () {
+        where R: Read + Sized, F: FnMut(&mut Message) -> Result<()> {
         let read = buffer.from(reader)?;
         buffer.read_from(|slice| {
             let (mut message, count) = Message::read(slice, reader)?;
-            fun(&mut message);
+            fun(&mut message)?;
             message.drain()?;
             Ok(count)
         })?;
@@ -79,20 +80,32 @@ impl Server {
 pub struct Client {}
 
 impl HttpHandler for Client{
-    fn handle<F>(&mut self, request: &mut Request, mut fun: F)  -> Result<usize>
-        where F: FnMut(&mut Response) -> Result<usize> + Sized {
+    fn handle<F>(&mut self, request: &mut Request, mut fun: F)  -> Result<()>
+        where F: FnMut(&mut Response) -> Result<()> + Sized {
         let stream = TcpStream::connect(request.get_header("Host").unwrap());
 
         let (mut reader, mut writer) = Server::split(stream)?;
         let mut buffer = Buffer::with_capacity(4096);
 
-        request.write_to(&mut writer);
+        request.write_to(&mut writer)?;
 
-        Server::read(&mut reader, &mut buffer, |mut message| {
+        unit(Server::read(&mut reader, &mut buffer, |mut message| {
             if let Message::Response(ref mut response) = *message {
-                fun(response);
+                return fun(response)
             }
-        })
+            Ok(())
+        }))
+    }
+}
+
+#[allow(unused_variables)]
+pub fn unit(result:Result<usize>) -> Result<()> {
+    result.map(|ignore|())
+}
+
+impl Client{
+    pub fn new() -> Client {
+        Client{}
     }
 }
 
@@ -122,6 +135,7 @@ mod tests {
             super::Server::read(&mut read, &mut buffer, |message| {
                 assert_eq!(*message, Message::parse(index[count].as_bytes()).unwrap().0);
                 count += 1;
+                Ok(())
             });
         }
     }
@@ -139,6 +153,7 @@ mod tests {
             super::Server::read(&mut data, &mut buffer, |message| {
                 assert_eq!(*message, Message::parse(index[count].as_bytes()).unwrap().0);
                 count += 1;
+                Ok(())
             }).expect("No errors");
         }
     }
@@ -159,6 +174,7 @@ mod tests {
             unsafe { message.write_to(result.as_mut_vec()) };
             assert_eq!(result, request);
             count += 1;
+            Ok(())
         }).expect("No errors");
 
         assert_eq!(count, 1);
@@ -168,6 +184,7 @@ mod tests {
             unsafe { message.write_to(result.as_mut_vec()) };
             assert_eq!(result, request);
             count += 1;
+            Ok(())
         }).expect("No errors");
 
         assert_eq!(count, 2);
@@ -192,6 +209,7 @@ mod tests {
         super::Server::read(&mut data, &mut buffer, |message| {
             // Ignore message so body is not consumed
             count += 1;
+            Ok(())
         }).expect("No errors");
 
         assert_eq!(count, 1);
@@ -199,6 +217,7 @@ mod tests {
         super::Server::read(&mut data, &mut buffer, |message| {
             // Ignore message so body is not consumed
             count += 1;
+            Ok(())
         }).expect("No errors");
 
         assert_eq!(count, 2);
