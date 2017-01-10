@@ -5,7 +5,7 @@ use http_handler::server::Server;
 use http_handler::api::FileHandler;
 
 fn main() {
-    Server::new("0.0.0.0".to_owned(), 8080).handler(||FileHandler::new(std::env::current_dir().unwrap())).unwrap();
+    Server::new("0.0.0.0".to_owned(), 8080).handler(||Ok(FileHandler::new(std::env::current_dir()?))).unwrap();
 }
 
 //fn port(env: &HashMap<String, String>) -> u16 {

@@ -23,22 +23,22 @@ impl Server {
     }
 
     pub fn handler<F, H>(&mut self, fun:F) -> Result<()>
-        where H:HttpHandler, F:Fn() -> H + Send + Sync + 'static{
+        where H:HttpHandler, F:Fn() -> Result<H> + Send + Sync + 'static{
         let listener = self.listen()?;
         let fun = Arc::new(fun);
 
         for stream in listener.incoming() {
             let fun = fun.clone();
-            thread::spawn(move || {
-                let (mut reader, mut writer) = Server::split(stream).unwrap();
+            thread::spawn(move || -> Result<()> {
+                let (mut reader, mut writer) = Server::split(stream)?;
                 let mut buffer = Buffer::with_capacity(4096);
-                let mut handler = fun();
+                let mut handler = fun()?;
                 loop {
                     match Server::read(&mut reader, &mut buffer, |mut request| {
                         Server::write(&mut writer, &mut handler, &mut request)
                     }) {
-                        Ok(read) if read > 0 => {},
-                        _ => break,
+                        Ok(read) if read > 0 => continue,
+                        _ => return Ok(()),
                     }
                 }
             });
