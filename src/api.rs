@@ -9,7 +9,7 @@ use parser::result;
 
 
 pub trait HttpHandler {
-    fn handle<F>(&mut self, request: &mut Request, fun: F) where F:FnMut(Response) -> () + Sized;
+    fn handle<F>(&mut self, request: &mut Request, fun: F) where F: FnMut(Response) -> () + Sized;
 }
 
 pub trait WriteTo {
@@ -44,9 +44,9 @@ impl<T: AsRef<Path>> FileHandler<T> {
     }
 }
 
-impl<T: AsRef<Path>> HttpHandler for FileHandler<T>{
+impl<T: AsRef<Path>> HttpHandler for FileHandler<T> {
     fn handle<F>(&mut self, request: &mut Request, mut fun: F)
-        where F:FnMut (Response) -> () + Sized {
+        where F: FnMut(Response) -> () + Sized {
         fun(match *request {
             Request { method: "GET", uri: Uri { path, .. }, .. } => { self.get(path).unwrap_or(Response::not_found().message("Not Found")) }
             _ => { Response::method_not_allowed() }
@@ -68,7 +68,7 @@ impl<H> LogHandler<H> where H: HttpHandler {
 
 impl<H> HttpHandler for LogHandler<H> where H: HttpHandler {
     fn handle<F>(&mut self, request: &mut Request, mut fun: F)
-        where F:FnMut(Response) -> () + Sized {
+        where F: FnMut(Response) -> () + Sized {
         let r = format!("{}", request);
         self.handler.handle(request, |response| {
             print!("{}{}\n\n\n", r, response);
@@ -123,6 +123,34 @@ impl<'a> fmt::Display for Uri<'a> {
 }
 
 #[derive(PartialEq, Debug)]
+pub enum Message<'a>{
+    Request(Request<'a>),
+    Response(Response<'a>),
+}
+
+impl<'a> Message<'a> {
+    pub fn read<R>(slice: &'a [u8], reader: &'a mut R) -> Result<(Message<'a>, usize)> where R: Read {
+        result(message_head(slice)).map(move |(head, remainder)| {
+            let head_length = slice.len() - remainder.len();
+            let headers = head.headers;
+            let (body, body_read) = MessageBody::read(&headers, remainder, reader);
+
+            return (match head.start_line {
+                StartLine::RequestLine(line) => Message::Request(Request::new(line.method, line.request_target, headers, body)),
+                StartLine::StatusLine(line) => Message::Response(Response::new(line.code, line.description, headers, body)),
+            }, head_length + body_read);
+        })
+    }
+
+    pub fn drain(self) -> Result<u64> {
+        match self {
+            Message::Request(request) => request.entity.drain(),
+            Message::Response(response) => response.entity.drain(),
+        }
+    }
+}
+
+#[derive(PartialEq, Debug)]
 pub struct Request<'a> {
     pub method: &'a str,
     pub uri: Uri<'a>,
@@ -141,19 +169,6 @@ impl<'a> Request<'a> {
 
     pub fn parse(slice: &'a [u8]) -> Result<(Request<'a>, &'a [u8])> {
         result(http_message(slice)).map(|(request, remainder)| (Request::from(request), remainder))
-    }
-
-    pub fn read<R>(slice: &'a [u8], reader: &'a mut R) -> Result<(Request<'a>, usize)> where R: Read {
-        result(message_head(slice)).map(move |(head, remainder)| {
-            if let StartLine::RequestLine(line) = head.start_line {
-                let headers = head.headers;
-                let (body, body_read) = MessageBody::read(&headers, remainder, reader);
-                let request = Request::new(line.method, line.request_target, headers, body);
-                let head_length = slice.len() - remainder.len();
-                return (request, head_length + body_read);
-            }
-            panic!("Can not convert Response to Request")
-        })
     }
 
     pub fn get(url: &'a str) -> Request<'a> {

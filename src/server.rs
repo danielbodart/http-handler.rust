@@ -1,7 +1,7 @@
 extern crate nom;
 extern crate std;
 
-use std::io::{Read, Write, Result};
+use std::io::{Read, Result};
 use std::net::{TcpStream, TcpListener};
 use std::{thread, str};
 use std::sync::Arc;
@@ -34,8 +34,12 @@ impl Server {
                 let mut buffer = Buffer::with_capacity(4096);
                 let mut handler = fun()?;
                 loop {
-                    match Server::read(&mut reader, &mut buffer, |mut request| {
-                        Server::write(&mut writer, &mut handler, &mut request)
+                    match Server::read(&mut reader, &mut buffer, |mut message| {
+                        if let Message::Request(ref mut request) = *message {
+                            handler.handle(request, |mut response| {
+                                response.write_to(&mut writer).expect("Should be able to write");
+                            });
+                        }
                     }) {
                         Ok(read) if read > 0 => continue,
                         _ => return Ok(()),
@@ -55,23 +59,15 @@ impl Server {
     }
 
     fn read<R, F>(reader: &mut R, buffer: &mut Buffer, mut fun: F) -> Result<usize>
-        where R: Read + Sized, F: FnMut(&mut Request) -> Result<usize> {
+        where R: Read + Sized, F: FnMut(&mut Message) -> () {
         let read = buffer.from(reader)?;
         buffer.read_from(|slice| {
-            let (mut request, count) = Request::read(slice, reader)?;
-            fun(&mut request)?;
-            request.entity.drain()?;
+            let (mut message, count) = Message::read(slice, reader)?;
+            fun(&mut message);
+            message.drain()?;
             Ok(count)
         })?;
         Ok(read)
-    }
-
-    fn write<'a, W, H>(write: &mut W, handler: &mut H, request: &mut Request<'a>) -> Result<usize>
-        where W: Write + Sized, H: HttpHandler + Sized {
-        handler.handle(request, |mut response| {
-            response.write_to(write);
-        });
-        Ok(0)
     }
 
     fn split(stream: Result<TcpStream>) -> Result<(TcpStream, TcpStream)> {
