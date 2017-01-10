@@ -82,7 +82,6 @@ impl Server {
 #[allow(unused_must_use)]
 mod tests {
     use io::*;
-    use grammar::*;
     use std::str;
     use api::*;
 
@@ -101,9 +100,8 @@ mod tests {
 
         while count < index.len() {
             super::Server::read(&mut read, &mut buffer, |message| {
-                assert_eq!(*message, Request::from(http_message(index[count].as_bytes()).unwrap().1));
+                assert_eq!(*message, Message::parse(index[count].as_bytes()).unwrap().0);
                 count += 1;
-                Ok(1)
             });
         }
     }
@@ -119,9 +117,8 @@ mod tests {
 
         while count < index.len() {
             super::Server::read(&mut data, &mut buffer, |message| {
-                assert_eq!(*message, Request::from(http_message(index[count].as_bytes()).unwrap().1));
+                assert_eq!(*message, Message::parse(index[count].as_bytes()).unwrap().0);
                 count += 1;
-                Ok(1)
             }).expect("No errors");
         }
     }
@@ -142,7 +139,6 @@ mod tests {
             unsafe { message.write_to(result.as_mut_vec()) };
             assert_eq!(result, request);
             count += 1;
-            Ok(1)
         }).expect("No errors");
 
         assert_eq!(count, 1);
@@ -152,7 +148,6 @@ mod tests {
             unsafe { message.write_to(result.as_mut_vec()) };
             assert_eq!(result, request);
             count += 1;
-            Ok(1)
         }).expect("No errors");
 
         assert_eq!(count, 2);
@@ -177,7 +172,6 @@ mod tests {
         super::Server::read(&mut data, &mut buffer, |message| {
             // Ignore message so body is not consumed
             count += 1;
-            Ok(1)
         }).expect("No errors");
 
         assert_eq!(count, 1);
@@ -185,7 +179,6 @@ mod tests {
         super::Server::read(&mut data, &mut buffer, |message| {
             // Ignore message so body is not consumed
             count += 1;
-            Ok(1)
         }).expect("No errors");
 
         assert_eq!(count, 2);

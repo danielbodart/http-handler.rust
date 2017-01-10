@@ -129,6 +129,10 @@ pub enum Message<'a>{
 }
 
 impl<'a> Message<'a> {
+    pub fn parse(slice: &'a [u8]) -> Result<(Message<'a>, &'a [u8])> {
+        result(http_message(slice)).map(|(message, remainder)| (Message::from(message), remainder))
+    }
+
     pub fn read<R>(slice: &'a [u8], reader: &'a mut R) -> Result<(Message<'a>, usize)> where R: Read {
         result(message_head(slice)).map(move |(head, remainder)| {
             let head_length = slice.len() - remainder.len();
@@ -146,6 +150,24 @@ impl<'a> Message<'a> {
         match self {
             Message::Request(request) => request.entity.drain(),
             Message::Response(response) => response.entity.drain(),
+        }
+    }
+}
+
+impl<'a> From<HttpMessage<'a>> for Message<'a> {
+    fn from(message: HttpMessage<'a>) -> Message<'a> {
+        match message.start_line {
+            StartLine::RequestLine(line) => Message::Request(Request::new(line.method, line.request_target, message.headers, message.body)),
+            StartLine::StatusLine(line) => Message::Response(Response::new(line.code, line.description, message.headers, message.body)),
+        }
+    }
+}
+
+impl<'a> WriteTo for Message<'a> {
+    fn write_to(&mut self, write: &mut Write) -> Result<usize> {
+        match *self {
+            Message::Request(ref mut request) => request.write_to(write),
+            Message::Response(ref mut response) => response.write_to(write),
         }
     }
 }
