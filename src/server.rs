@@ -15,15 +15,15 @@ pub struct Server {
 }
 
 impl Server {
-    pub fn new(host:String, port:u16) -> Server {
+    pub fn new(host: String, port: u16) -> Server {
         Server {
             host: host,
             port: port,
         }
     }
 
-    pub fn handler<F, H>(&mut self, fun:F) -> Result<()>
-        where H:HttpHandler, F:Fn() -> Result<H> + Send + Sync + 'static{
+    pub fn handler<F, H>(&mut self, fun: F) -> Result<()>
+        where H: HttpHandler, F: Fn() -> Result<H> + Send + Sync + 'static {
         let listener = self.listen()?;
         let fun = Arc::new(fun);
 
@@ -44,7 +44,6 @@ impl Server {
             });
         }
         Ok(())
-
     }
 
     fn listen(&mut self) -> Result<TcpListener> {
@@ -69,8 +68,10 @@ impl Server {
 
     fn write<'a, W, H>(write: &mut W, handler: &mut H, request: &mut Request<'a>) -> Result<usize>
         where W: Write + Sized, H: HttpHandler + Sized {
-        let mut response = handler.handle(request);
-        response.write_to(write)
+        handler.handle(request, |mut response| {
+            response.write_to(write);
+        });
+        Ok(0)
     }
 
     fn split(stream: Result<TcpStream>) -> Result<(TcpStream, TcpStream)> {
@@ -78,7 +79,6 @@ impl Server {
         Ok((a.try_clone()?, a))
     }
 }
-
 
 
 #[cfg(test)]
@@ -143,7 +143,7 @@ mod tests {
 
         super::Server::read(&mut data, &mut buffer, |message| {
             let mut result = String::new();
-            unsafe {message.write_to(result.as_mut_vec())};
+            unsafe { message.write_to(result.as_mut_vec()) };
             assert_eq!(result, request);
             count += 1;
             Ok(1)
@@ -153,7 +153,7 @@ mod tests {
 
         super::Server::read(&mut data, &mut buffer, |message| {
             let mut result = String::new();
-            unsafe {message.write_to(result.as_mut_vec())};
+            unsafe { message.write_to(result.as_mut_vec()) };
             assert_eq!(result, request);
             count += 1;
             Ok(1)

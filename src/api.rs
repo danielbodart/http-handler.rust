@@ -9,7 +9,7 @@ use parser::result;
 
 
 pub trait HttpHandler {
-    fn handle(&mut self, request: &mut Request) -> Response;
+    fn handle<F>(&mut self, request: &mut Request, fun: F) where F:FnMut(Response) -> () + Sized;
 }
 
 pub trait WriteTo {
@@ -44,12 +44,13 @@ impl<T: AsRef<Path>> FileHandler<T> {
     }
 }
 
-impl<T: AsRef<Path>> HttpHandler for FileHandler<T> {
-    fn handle(&mut self, request: &mut Request) -> Response {
-        match *request {
-            Request { method: "GET", uri: Uri { path, .. }, .. } => { return self.get(path).unwrap_or(Response::not_found().message("Not Found")) }
+impl<T: AsRef<Path>> HttpHandler for FileHandler<T>{
+    fn handle<F>(&mut self, request: &mut Request, mut fun: F)
+        where F:FnMut (Response) -> () + Sized {
+        fun(match *request {
+            Request { method: "GET", uri: Uri { path, .. }, .. } => { self.get(path).unwrap_or(Response::not_found().message("Not Found")) }
             _ => { Response::method_not_allowed() }
-        }
+        })
     }
 }
 
@@ -66,11 +67,13 @@ impl<H> LogHandler<H> where H: HttpHandler {
 }
 
 impl<H> HttpHandler for LogHandler<H> where H: HttpHandler {
-    fn handle(&mut self, request: &mut Request) -> Response {
+    fn handle<F>(&mut self, request: &mut Request, mut fun: F)
+        where F:FnMut(Response) -> () + Sized {
         let r = format!("{}", request);
-        let response = self.handler.handle(request);
-        print!("{}{}\n\n\n", r, response);
-        response
+        self.handler.handle(request, |response| {
+            print!("{}{}\n\n\n", r, response);
+            fun(response)
+        });
     }
 }
 
