@@ -30,11 +30,11 @@ impl Server {
         for stream in listener.incoming() {
             let fun = fun.clone();
             thread::spawn(move || -> Result<()> {
-                let (mut reader, mut writer) = Server::split(stream)?;
+                let (mut reader, mut writer) = Tcp::split(stream)?;
                 let mut buffer = Buffer::with_capacity(4096);
                 let mut handler = fun()?;
                 loop {
-                    match Server::read(&mut reader, &mut buffer, |mut message| {
+                    match Tcp::read(&mut reader, &mut buffer, |mut message| {
                         if let Message::Request(ref mut request) = *message {
                             return handler.handle(request, |response| {
                                 unit(response.write_to(&mut writer))
@@ -59,6 +59,12 @@ impl Server {
         Ok(listener)
     }
 
+
+}
+
+pub struct Tcp{}
+
+impl Tcp {
     fn read<R, F>(reader: &mut R, buffer: &mut Buffer, mut fun: F) -> Result<usize>
         where R: Read + Sized, F: FnMut(&mut Message) -> Result<()> {
         let read = buffer.from(reader)?;
@@ -84,12 +90,12 @@ impl HttpHandler for Client{
         where F: FnMut(&mut Response) -> Result<()> + Sized {
         let stream = TcpStream::connect(request.get_header("Host").unwrap());
 
-        let (mut reader, mut writer) = Server::split(stream)?;
+        let (mut reader, mut writer) = Tcp::split(stream)?;
         let mut buffer = Buffer::with_capacity(4096);
 
         request.write_to(&mut writer)?;
 
-        unit(Server::read(&mut reader, &mut buffer, |mut message| {
+        unit(Tcp::read(&mut reader, &mut buffer, |mut message| {
             if let Message::Response(ref mut response) = *message {
                 return fun(response)
             }
@@ -132,7 +138,7 @@ mod tests {
         let mut count = 0;
 
         while count < index.len() {
-            super::Server::read(&mut read, &mut buffer, |message| {
+            super::Tcp::read(&mut read, &mut buffer, |message| {
                 assert_eq!(*message, Message::parse(index[count].as_bytes()).unwrap().0);
                 count += 1;
                 Ok(())
@@ -150,7 +156,7 @@ mod tests {
         let mut count = 0;
 
         while count < index.len() {
-            super::Server::read(&mut data, &mut buffer, |message| {
+            super::Tcp::read(&mut data, &mut buffer, |message| {
                 assert_eq!(*message, Message::parse(index[count].as_bytes()).unwrap().0);
                 count += 1;
                 Ok(())
@@ -169,7 +175,7 @@ mod tests {
         let mut buffer = Buffer::with_capacity(head.len());
         let mut count = 0;
 
-        super::Server::read(&mut data, &mut buffer, |message| {
+        super::Tcp::read(&mut data, &mut buffer, |message| {
             let mut result = String::new();
             unsafe { message.write_to(result.as_mut_vec()) };
             assert_eq!(result, request);
@@ -179,7 +185,7 @@ mod tests {
 
         assert_eq!(count, 1);
 
-        super::Server::read(&mut data, &mut buffer, |message| {
+        super::Tcp::read(&mut data, &mut buffer, |message| {
             let mut result = String::new();
             unsafe { message.write_to(result.as_mut_vec()) };
             assert_eq!(result, request);
@@ -190,7 +196,7 @@ mod tests {
         assert_eq!(count, 2);
 
 
-        assert!(super::Server::read(&mut data, &mut buffer, |message| {
+        assert!(super::Tcp::read(&mut data, &mut buffer, |message| {
             panic!("Should not be any more data")
         }).is_err());
     }
@@ -206,7 +212,7 @@ mod tests {
         let mut buffer = Buffer::with_capacity(head.len());
         let mut count = 0;
 
-        super::Server::read(&mut data, &mut buffer, |message| {
+        super::Tcp::read(&mut data, &mut buffer, |message| {
             // Ignore message so body is not consumed
             count += 1;
             Ok(())
@@ -214,7 +220,7 @@ mod tests {
 
         assert_eq!(count, 1);
 
-        super::Server::read(&mut data, &mut buffer, |message| {
+        super::Tcp::read(&mut data, &mut buffer, |message| {
             // Ignore message so body is not consumed
             count += 1;
             Ok(())
@@ -223,7 +229,7 @@ mod tests {
         assert_eq!(count, 2);
 
 
-        assert!(super::Server::read(&mut data, &mut buffer, |message| {
+        assert!(super::Tcp::read(&mut data, &mut buffer, |message| {
             panic!("Should not be any more data")
         }).is_err());
     }
