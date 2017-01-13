@@ -1,6 +1,7 @@
 use std::usize;
-use std::io::{Read, BufRead, Write, Result};
+use std::io::{Read, BufRead, Write, Result, Error, ErrorKind};
 use std::cmp::min;
+use std::fmt::{Debug, Display};
 
 pub trait ReadFrom {
     fn read_from<F>(&mut self, fun: F) -> Result<usize>
@@ -83,6 +84,23 @@ impl Write for Buffer {
         Ok(())
     }
 }
+
+pub struct SimpleError;
+
+impl SimpleError{
+    pub fn debug<V>(value:V) -> Error where V: Debug {
+        SimpleError::error(format!("{:?}", value))
+    }
+
+    pub fn display<V>(value:V) -> Error where V: Display {
+        SimpleError::error(format!("{}", value))
+    }
+
+    pub fn error<V>(value:V) -> Error where V: AsRef<str> {
+        Error::new(ErrorKind::Other, value.as_ref())
+    }
+}
+
 
 impl ReadFrom for Buffer {
     fn read_from<F>(&mut self, mut fun: F) -> Result<usize>

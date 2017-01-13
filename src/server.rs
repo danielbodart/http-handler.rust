@@ -6,6 +6,7 @@ use std::net::{TcpStream, TcpListener};
 use std::{thread, str};
 use std::sync::Arc;
 use std::marker::{Send};
+use std::cmp::max;
 use api::*;
 use io::*;
 
@@ -42,8 +43,8 @@ impl Server {
                         }
                         Ok(())
                     }) {
-                        Ok(read) if read > 0 => continue,
-                        _ => return Ok(()),
+                        Ok(()) => continue,
+                        Err(e) => return Err(e),
                     }
                 }
             });
@@ -65,16 +66,20 @@ impl Server {
 pub struct Tcp{}
 
 impl Tcp {
-    fn read<R, F>(reader: &mut R, buffer: &mut Buffer, mut fun: F) -> Result<usize>
+    fn read<R, F>(reader: &mut R, buffer: &mut Buffer, mut fun: F) -> Result<()>
         where R: Read + Sized, F: FnMut(&mut Message) -> Result<()> {
         let read = buffer.from(reader)?;
-        buffer.read_from(|slice| {
+        let wrote = buffer.read_from(|slice| {
             let (mut message, count) = Message::read(slice, reader)?;
             fun(&mut message)?;
             message.drain()?;
             Ok(count)
         })?;
-        Ok(read)
+        if max(read, wrote) > 0 {
+            Ok(())
+        } else {
+            Err(SimpleError::error("Unable to read any data"))
+        }
     }
 
     fn split(stream: Result<TcpStream>) -> Result<(TcpStream, TcpStream)> {
@@ -95,12 +100,12 @@ impl HttpHandler for Client{
 
         request.write_to(&mut writer)?;
 
-        unit(Tcp::read(&mut reader, &mut buffer, |mut message| {
+        Tcp::read(&mut reader, &mut buffer, |mut message| {
             if let Message::Response(ref mut response) = *message {
                 return fun(response)
             }
             Ok(())
-        }))
+        })
     }
 }
 

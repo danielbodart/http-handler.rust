@@ -37,6 +37,7 @@ named!(ows, map_res!(many0!(alt!(space | htab)), join_vec));
 // RWS            = 1*( SP / HTAB ) ; required whitespace
 named!(rws, map_res!(many1!(alt!(space | htab)), join_vec));
 // BWS            = OWS ; "bad" whitespace
+// TODO alias BWS
 
 // DQUOTE         =  %x22 ; " (Double Quote)
 named!(double_quote, tag!("\""));
