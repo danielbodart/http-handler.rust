@@ -6,7 +6,6 @@ use std::net::{TcpStream, TcpListener};
 use std::{thread, str};
 use std::sync::Arc;
 use std::marker::{Send};
-use std::cmp::max;
 use api::*;
 use io::*;
 
@@ -38,7 +37,7 @@ impl Server {
                     match Stream::read(&mut reader, &mut buffer, |mut message| {
                         if let Message::Request(ref mut request) = *message {
                             return handler.handle(request, |response| {
-                                unit(response.write_to(&mut writer))
+                                consume(response.write_to(&mut writer))
                             });
                         }
                         Ok(())
@@ -59,8 +58,6 @@ impl Server {
         println!("listening on http://{}:{}/", self.host, self.port);
         Ok(listener)
     }
-
-
 }
 
 pub struct Stream;
@@ -68,18 +65,13 @@ pub struct Stream;
 impl Stream {
     fn read<R, F>(reader: &mut R, buffer: &mut Buffer, mut fun: F) -> Result<()>
         where R: Read + Sized, F: FnMut(&mut Message) -> Result<()> {
-        let read = buffer.from(reader)?;
-        let wrote = buffer.read_from(|slice| {
+        consume(buffer.from(reader))?;
+        unit(buffer.read_from(|slice| {
             let (mut message, count) = Message::read(slice, reader)?;
             fun(&mut message)?;
             message.drain()?;
             Ok(count)
-        })?;
-        if max(read, wrote) > 0 {
-            Ok(())
-        } else {
-            Err(SimpleError::error("Unable to read any data"))
-        }
+        }))
     }
 
     fn split(stream: Result<TcpStream>) -> Result<(TcpStream, TcpStream)> {
@@ -90,8 +82,8 @@ impl Stream {
 
 pub struct Client;
 
-impl HttpHandler for Client{
-    fn handle<F>(&mut self, request: &mut Request, mut fun: F)  -> Result<()>
+impl HttpHandler for Client {
+    fn handle<F>(&mut self, request: &mut Request, mut fun: F) -> Result<()>
         where F: FnMut(&mut Response) -> Result<()> + Sized {
         let stream = TcpStream::connect(request.get_header("Host").unwrap());
 
@@ -109,12 +101,7 @@ impl HttpHandler for Client{
     }
 }
 
-#[allow(unused_variables)]
-pub fn unit(result:Result<usize>) -> Result<()> {
-    result.map(|ignore|())
-}
-
-impl Client{
+impl Client {
     pub fn new() -> Client {
         Client
     }

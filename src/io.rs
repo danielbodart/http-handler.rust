@@ -87,20 +87,32 @@ impl Write for Buffer {
 
 pub struct SimpleError;
 
-impl SimpleError{
-    pub fn debug<V>(value:V) -> Error where V: Debug {
+impl SimpleError {
+    pub fn debug<V>(value: V) -> Error where V: Debug {
         SimpleError::error(format!("{:?}", value))
     }
 
-    pub fn display<V>(value:V) -> Error where V: Display {
+    pub fn display<V>(value: V) -> Error where V: Display {
         SimpleError::error(format!("{}", value))
     }
 
-    pub fn error<V>(value:V) -> Error where V: AsRef<str> {
+    pub fn error<V>(value: V) -> Error where V: AsRef<str> {
         Error::new(ErrorKind::Other, value.as_ref())
     }
 }
 
+#[allow(unused_variables)]
+pub fn unit(result:Result<usize>) -> Result<()> {
+    result.map(|ignore|())
+}
+
+pub fn consume(result: Result<usize>) -> Result<()> {
+    match result {
+        Ok(value) if value > 0 => Ok(()),
+        Ok(_) => Err(SimpleError::error("No data consumed")),
+        Err(e) => Err(e),
+    }
+}
 
 impl ReadFrom for Buffer {
     fn read_from<F>(&mut self, mut fun: F) -> Result<usize>
