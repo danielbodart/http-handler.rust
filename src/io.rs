@@ -35,6 +35,21 @@ impl Buffer {
         self.value.capacity()
     }
 
+    pub fn space(&self) -> usize {
+        self.value.capacity() - self.write_position
+    }
+
+    pub fn reserve(&mut self, additional: usize) {
+        let actual = additional - self.space();
+        self.value.reserve(actual);
+        let cap = {self.value.capacity()};
+        unsafe { self.value.set_len(cap) }
+    }
+
+    pub fn len(&self) -> usize {
+        self.write_position - self.read_position
+    }
+
     pub fn as_read(&self) -> &[u8] {
         &self.value[self.read_position..self.write_position]
     }
@@ -102,8 +117,8 @@ impl SimpleError {
 }
 
 #[allow(unused_variables)]
-pub fn unit(result:Result<usize>) -> Result<()> {
-    result.map(|ignore|())
+pub fn unit(result: Result<usize>) -> Result<()> {
+    result.map(|ignore| ())
 }
 
 pub fn consume(result: Result<usize>) -> Result<()> {
@@ -154,16 +169,47 @@ pub struct BufferedRead<T> where T: Read + Sized {
     buffer: Buffer,
 }
 
+impl<T> From<T> for BufferedRead<T> where T: Read + Sized {
+    fn from(inner: T) -> Self {
+        BufferedRead::with_capacity(4096, inner)
+    }
+}
+
 impl<T> BufferedRead<T> where T: Read + Sized {
-    pub fn new(inner: T) -> BufferedRead<T> {
+    pub fn new(inner: T, buffer: Buffer) -> BufferedRead<T> {
         BufferedRead {
             inner: inner,
-            buffer: Buffer::with_capacity(4096),
+            buffer: buffer,
         }
+    }
+
+    pub fn with_capacity(capacity: usize, inner: T) -> BufferedRead<T> {
+        BufferedRead::new(inner, Buffer::with_capacity(capacity))
     }
 
     pub fn fill(&mut self) -> Result<usize> {
         self.buffer.from(&mut self.inner)
+    }
+
+    pub fn read_segment<F>(&mut self, mut fun: F) -> Result<usize>
+        where F: FnMut(&[u8], &mut BufferedRead<&mut T>) -> Result<usize> {
+        self.fill()?;
+        match *self {
+            BufferedRead { ref mut inner, ref mut buffer } => {
+                let mut buffered = BufferedRead::with_capacity(buffer.capacity(), inner);
+                let slice_read = buffer.read_from(|slice| {
+                    fun(slice, &mut buffered)
+                })?;
+                let b = buffer;
+                let buffered_read = match buffered {
+                    BufferedRead { ref mut buffer, .. } => {
+                        b.reserve(buffer.len());
+                        b.from(buffer)?
+                    }
+                };
+                Ok(slice_read + buffered_read)
+            }
+        }
     }
 }
 
@@ -239,11 +285,37 @@ impl<'a> Read for Fragmented<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Read;
 
     #[test]
     fn supports_capacity() {
         let buffer = Buffer::with_capacity(8);
         assert_eq!(buffer.capacity(), 8);
+    }
+
+    #[test]
+    fn supports_length() {
+        let mut buffer = Buffer::with_capacity(8);
+        assert_eq!(buffer.len(), 0);
+        { buffer.increment_write(5) };
+        { buffer.increment_read(2) };
+        assert_eq!(buffer.len(), 3);
+    }
+
+    #[test]
+    fn supports_space() {
+        let mut buffer = Buffer::with_capacity(8);
+        assert_eq!(buffer.space(), 8);
+        { buffer.increment_write(5) };
+        assert_eq!(buffer.space(), 3);
+    }
+
+    #[test]
+    fn supports_reserve() {
+        let mut buffer = Buffer::with_capacity(8);
+        { buffer.increment_write(5) };
+        { buffer.reserve(11) };
+        assert_eq!(buffer.capacity(), 16);
     }
 
     #[test]
@@ -295,5 +367,43 @@ mod tests {
         }).expect("Could not read_from");
         assert_eq!(buffer.read_position, 0);
         assert_eq!(buffer.write_position, 0);
+    }
+
+    #[test]
+    fn buffered_read_can_nest() {
+        let data = &b"abcdefghijklmnopqrstuvwxyz"[..];
+        let mut buffered = BufferedRead::with_capacity(3, data);
+        buffered.read_segment(|head, tail| {
+            assert_eq!(head, &b"abc"[..]);
+            tail.read_segment(|head, tail| {
+                assert_eq!(head, &b"def"[..]);
+                tail.read_segment(|head, tail| {
+                    assert_eq!(head, &b"ghi"[..]);
+                    Ok(1)
+                })?;
+                Ok(3)
+            })?;
+            Ok(3)
+        });
+        buffered.read_segment(|head, tail| {
+            assert_eq!(head, &b"hij"[..]);
+            tail.read_segment(|head, tail| {
+                assert_eq!(head, &b"klm"[..]);
+                Err(SimpleError::error(""))
+            })?;
+            panic!("Should never get here")
+        });
+        buffered.read_segment(|head, tail| {
+            assert_eq!(head, &b"hij"[..]);
+            tail.read_segment(|head, tail| {
+                assert_eq!(head, &b"klm"[..]);
+                tail.read_segment(|head, tail| {
+                    assert_eq!(head, &b"opq"[..]);
+                    Ok(3)
+                })?;
+                Ok(3)
+            })?;
+            Ok(3)
+        });
     }
 }
