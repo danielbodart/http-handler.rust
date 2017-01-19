@@ -40,9 +40,12 @@ impl Buffer {
     }
 
     pub fn reserve(&mut self, additional: usize) {
-        let actual = additional - self.space();
-        self.value.reserve(actual);
-        let cap = {self.value.capacity()};
+        println!("reserve space: {} additional: {} capacity: {}", self.space(), additional, self.capacity());
+        if additional > self.space() {
+            let actual = additional - self.space();
+            self.value.reserve(actual);
+        }
+        let cap = { self.value.capacity() };
         unsafe { self.value.set_len(cap) }
     }
 
@@ -196,18 +199,26 @@ impl<T> BufferedRead<T> where T: Read + Sized {
         self.fill()?;
         match *self {
             BufferedRead { ref mut inner, ref mut buffer } => {
+                println!("outer buffer before read: {:?}", buffer);
                 let mut buffered = BufferedRead::with_capacity(buffer.capacity(), inner);
                 let slice_read = buffer.read_from(|slice| {
                     fun(slice, &mut buffered)
-                })?;
+                });
+                println!("outer buffer after read: {:?}", buffer);
+                println!("slice_read: {:?}", slice_read);
                 let b = buffer;
                 let buffered_read = match buffered {
                     BufferedRead { ref mut buffer, .. } => {
+                        println!("inner buffer before from: {:?}", buffer);
                         b.reserve(buffer.len());
-                        b.from(buffer)?
+                        let x = b.from(buffer);
+                        println!("inner buffer after from: {:?}", buffer);
+                        x
                     }
                 };
-                Ok(slice_read + buffered_read)
+                println!("outer buffer after from: {:?}", b);
+                println!("buffered_read: {:?}", buffered_read);
+                Ok(slice_read? + buffered_read?)
             }
         }
     }
@@ -285,7 +296,7 @@ impl<'a> Read for Fragmented<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Read;
+    use std::error::Error;
 
     #[test]
     fn supports_capacity() {
@@ -370,40 +381,51 @@ mod tests {
     }
 
     #[test]
+    #[allow(unused_variables)]
+    #[allow(unused_must_use)]
     fn buffered_read_can_nest() {
-        let data = &b"abcdefghijklmnopqrstuvwxyz"[..];
-        let mut buffered = BufferedRead::with_capacity(3, data);
+        let data = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26][..];
+        let mut buffered = BufferedRead::with_capacity(2, data);
         buffered.read_segment(|head, tail| {
-            assert_eq!(head, &b"abc"[..]);
+            assert_eq!(head, &[1, 2][..]);
             tail.read_segment(|head, tail| {
-                assert_eq!(head, &b"def"[..]);
-                tail.read_segment(|head, tail| {
-                    assert_eq!(head, &b"ghi"[..]);
-                    Ok(1)
-                })?;
-                Ok(3)
+                assert_eq!(head, &[3, 4][..]);
+                Ok(1)
             })?;
-            Ok(3)
-        });
+            Ok(2)
+        }).expect("No errors");
         buffered.read_segment(|head, tail| {
-            assert_eq!(head, &b"hij"[..]);
+            assert_eq!(head, &[4, 5][..]);
+            let failed = tail.read_segment(|head, tail| {
+                assert_eq!(head, &[6, 7][..]);
+                Err(SimpleError::error(""))
+            });
+            assert!(failed.is_err());
             tail.read_segment(|head, tail| {
-                assert_eq!(head, &b"klm"[..]);
+                assert_eq!(head, &[6, 7][..]);
+                Ok(1)
+            })?;
+            Ok(2)
+        }).expect("No errors");
+        buffered.read_segment(|head, tail| {
+            assert_eq!(head, &[7, 8, 9, 10][..]);
+            tail.read_segment(|head, tail| {
+                assert_eq!(head, &[8, 9, 10, 11][..]);
+                Ok(1)
+            })?;
+            tail.read_segment(|head, tail| {
+                assert_eq!(head, &[9, 10, 11][..]);
+                Ok(1)
+            })?;
+            tail.read_segment(|head, tail| {
+                assert_eq!(head, &[10, 11][..]);
                 Err(SimpleError::error(""))
             })?;
             panic!("Should never get here")
-        });
+        }).expect("No errors");
         buffered.read_segment(|head, tail| {
-            assert_eq!(head, &b"hij"[..]);
-            tail.read_segment(|head, tail| {
-                assert_eq!(head, &b"klm"[..]);
-                tail.read_segment(|head, tail| {
-                    assert_eq!(head, &b"opq"[..]);
-                    Ok(3)
-                })?;
-                Ok(3)
-            })?;
-            Ok(3)
-        });
+            assert_eq!(head, &[4, 5, 6, 7][..]);
+            Ok(0)
+        }).expect("No errors");
     }
 }
