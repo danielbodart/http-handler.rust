@@ -138,13 +138,15 @@ impl<'a> MessageBody<'a> {
             _ => Ok(()),
         }
     }
+}
 
-    pub fn drain(self) -> Result<u64> {
-        match self {
-            MessageBody::Reader(mut reader) => {
-                copy(&mut reader, &mut sink())
+impl<'a> Drop for MessageBody<'a>{
+    fn drop(&mut self) {
+        match *self {
+            MessageBody::Reader(ref mut reader) => {
+                copy(reader, &mut sink()).expect("should be able to copy");
             },
-            _ => Ok(0),
+            _ => {},
         }
     }
 }

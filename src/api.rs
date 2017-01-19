@@ -146,13 +146,6 @@ impl<'a> Message<'a> {
             }, head_length + body_read);
         })
     }
-
-    pub fn drain(self) -> Result<u64> {
-        match self {
-            Message::Request(request) => request.entity.drain(),
-            Message::Response(response) => response.entity.drain(),
-        }
-    }
 }
 
 impl<'a> From<HttpMessage<'a>> for Message<'a> {
