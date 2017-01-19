@@ -256,20 +256,20 @@ impl<'a> fmt::Display for ChunkExtensions<'a> {
 pub enum Chunk<'a> {
     Slice(ChunkExtensions<'a>, &'a [u8]),
     Last(ChunkExtensions<'a>),
+    Trailers(Headers<'a>),
 }
 
 #[derive(PartialEq, Debug)]
 pub struct ChunkedBody<'a> {
     chunks: Vec<Chunk<'a>>,
-    trailers: Headers<'a>
 }
 
 impl<'a> ChunkedBody<'a> {
     pub fn new(mut chunks: Vec<Chunk<'a>>, last: Chunk<'a>, trailers: Headers<'a>) -> ChunkedBody<'a> {
         chunks.push(last);
+        chunks.push(Chunk::Trailers(trailers));
         ChunkedBody {
             chunks: chunks,
-            trailers: trailers,
         }
     }
 }
