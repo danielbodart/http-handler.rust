@@ -255,8 +255,7 @@ impl<'a> fmt::Display for ChunkExtensions<'a> {
 #[derive(PartialEq, Debug)]
 pub enum Chunk<'a> {
     Slice(ChunkExtensions<'a>, &'a [u8]),
-    Last(ChunkExtensions<'a>),
-    Trailers(Headers<'a>),
+    Last(ChunkExtensions<'a>, Headers<'a>),
 }
 
 #[derive(PartialEq, Debug)]
@@ -265,9 +264,8 @@ pub struct ChunkedBody<'a> {
 }
 
 impl<'a> ChunkedBody<'a> {
-    pub fn new(mut chunks: Vec<Chunk<'a>>, last: Chunk<'a>, trailers: Headers<'a>) -> ChunkedBody<'a> {
-        chunks.push(last);
-        chunks.push(Chunk::Trailers(trailers));
+    pub fn new(mut chunks: Vec<Chunk<'a>>, last: ChunkExtensions<'a>, trailers: Headers<'a>) -> ChunkedBody<'a> {
+        chunks.push(Chunk::Last(last, trailers));
         ChunkedBody {
             chunks: chunks,
         }

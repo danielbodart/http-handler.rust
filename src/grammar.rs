@@ -165,9 +165,9 @@ named!(chunk <Chunk>, do_parse!(
 ));
 
 // last-chunk     = 1*("0") [ chunk-ext ] CRLF
-named!(last_chunk <Chunk>, do_parse!(
+named!(last_chunk <ChunkExtensions>, do_parse!(
     many1!(char!('0')) >> extensions:chunk_ext >> crlf >>
-    (Chunk::Last(extensions))
+    (extensions)
 ));
 
 // trailer-part   = *( header-field CRLF )
@@ -325,8 +325,7 @@ mod tests {
             Chunk::Slice(ChunkExtensions(vec!()), &b"Wiki"[..]),
             Chunk::Slice(ChunkExtensions(vec!()), &b"pedia"[..]),
             Chunk::Slice(ChunkExtensions(vec!()), &b" in\r\n\r\nchunks."[..])),
-                                 Chunk::Last(ChunkExtensions(vec!())),
-                                 Headers(vec!()));
+                                 ChunkExtensions(vec!()), Headers(vec!()));
         assert_eq!(super::chunked_body(&b"4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n0\r\n\r\n"[..]),
         Done(&b""[..], chunked_body));
     }
