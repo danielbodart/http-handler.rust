@@ -2,6 +2,7 @@ extern crate nom;
 
 use nom::{is_digit, is_hex_digit, is_alphabetic, IResult};
 use std::{str};
+use std::borrow::Cow;
 
 use misc::*;
 use ast::*;
@@ -108,10 +109,10 @@ named!(field_content, do_parse!(
 named!(obs_fold, do_parse!( crlf >> spaces >> (Default::default()) ));
 
 // field-value    = *( field-content / obs-fold )
-named!(field_value <String>, map_res!(many0!(alt!(field_content | obs_fold)), to_string));
+named!(field_value <Cow<str>>, map_res!(many0!(alt!(field_content | obs_fold)), to_cow_str));
 
 // header-field   = field-name ":" OWS field-value OWS
-named!(header_field <(&str, String)>, do_parse!(
+named!(header_field <(&str, Cow<str>)>, do_parse!(
     name:field_name >> tag!(":") >> ows >> value:field_value >> ows >>
     ((name, value))
   ));
@@ -184,6 +185,7 @@ named!(chunked_body <ChunkedBody>, do_parse!(
 mod tests {
     use ast::*;
     use nom::IResult::Done;
+    use std::borrow::Cow;
 
     #[test]
     fn http_name() {
@@ -259,34 +261,34 @@ mod tests {
 
     #[test]
     fn field_value() {
-        assert_eq!(super::field_value(&b"plain/text"[..]), Done(&b""[..], "plain/text".to_string()));
-        assert_eq!(super::field_value(&b"Spaces are allowed in the middle"[..]), Done(&b""[..], "Spaces are allowed in the middle".to_string()));
-        assert_eq!(super::field_value(&b"You can al\r\n so wrap onto new lines!"[..]), Done(&b""[..], "You can also wrap onto new lines!".to_string()));
+        assert_eq!(super::field_value(&b"plain/text"[..]), Done(&b""[..], Cow::from("plain/text")));
+        assert_eq!(super::field_value(&b"Spaces are allowed in the middle"[..]), Done(&b""[..], Cow::from("Spaces are allowed in the middle")));
+        assert_eq!(super::field_value(&b"You can al\r\n so wrap onto new lines!"[..]), Done(&b""[..], Cow::from("You can also wrap onto new lines!")));
     }
 
     #[test]
     fn header_field() {
-        assert_eq!(super::header_field(&b"Content-Type:plain/text"[..]), Done(&b""[..], ("Content-Type", "plain/text".to_string())));
-        assert_eq!(super::header_field(&b"Content-Type: plain/text"[..]), Done(&b""[..], ("Content-Type", "plain/text".to_string())));
-        assert_eq!(super::header_field(&b"Content-Type: plain/text "[..]), Done(&b""[..], ("Content-Type", "plain/text".to_string())));
-        assert_eq!(super::header_field(&b"Content-Type: plain/\r\n text "[..]), Done(&b""[..], ("Content-Type", "plain/text".to_string())));
+        assert_eq!(super::header_field(&b"Content-Type:plain/text"[..]), Done(&b""[..], ("Content-Type", Cow::from("plain/text"))));
+        assert_eq!(super::header_field(&b"Content-Type: plain/text"[..]), Done(&b""[..], ("Content-Type", Cow::from("plain/text"))));
+        assert_eq!(super::header_field(&b"Content-Type: plain/text "[..]), Done(&b""[..], ("Content-Type", Cow::from("plain/text"))));
+        assert_eq!(super::header_field(&b"Content-Type: plain/\r\n text "[..]), Done(&b""[..], ("Content-Type", Cow::from("plain/text"))));
     }
 
     #[test]
     fn http_message() {
         assert_eq!(super::http_message(&b"GET /where?q=now HTTP/1.1\r\nContent-Type:plain/text\r\n\r\n"[..]), Done(&b""[..], HttpMessage {
             start_line: StartLine::RequestLine(RequestLine { method: "GET", request_target: "/where?q=now", version: HttpVersion { major: 1, minor: 1, } }),
-            headers: Headers(vec!(("Content-Type", "plain/text".to_string()))),
+            headers: Headers(vec!(("Content-Type", Cow::from("plain/text")))),
             body: MessageBody::None,
         }));
         assert_eq!(super::http_message(&b"HTTP/1.1 200 OK\r\nContent-Type:plain/text\r\n\r\n"[..]), Done(&b""[..], HttpMessage {
             start_line: StartLine::StatusLine(StatusLine { version: HttpVersion { major: 1, minor: 1, }, code: 200, description: "OK" }),
-            headers: Headers(vec!(("Content-Type", "plain/text".to_string()))),
+            headers: Headers(vec!(("Content-Type", Cow::from("plain/text")))),
             body: MessageBody::None,
         }));
         assert_eq!(super::http_message(&b"HTTP/1.1 200 OK\r\nContent-Type:plain/text\r\nContent-Length:3\r\n\r\nabc"[..]), Done(&b""[..], HttpMessage {
             start_line: StartLine::StatusLine(StatusLine { version: HttpVersion { major: 1, minor: 1, }, code: 200, description: "OK" }),
-            headers: Headers(vec!(("Content-Type", "plain/text".to_string()), ("Content-Length", "3".to_string()))),
+            headers: Headers(vec!(("Content-Type", Cow::from("plain/text")), ("Content-Length", Cow::from("3")))),
             body: MessageBody::Slice(&b"abc"[..]),
         }));
     }
@@ -334,7 +336,7 @@ mod tests {
     fn message_head() {
         assert_eq!(super::message_head(&b"POST /where?q=now HTTP/1.1\r\nContent-Type:plain/text\r\nContent-Length:3\r\n\r\nabc"[..]), Done(&b"abc"[..], MessageHead {
             start_line: StartLine::RequestLine(RequestLine { method: "POST", request_target: "/where?q=now", version: HttpVersion { major: 1, minor: 1, } }),
-            headers: Headers(vec!(("Content-Type", "plain/text".to_string()), ("Content-Length", "3".to_string()))),
+            headers: Headers(vec!(("Content-Type", Cow::from("plain/text")), ("Content-Length", Cow::from("3")))),
         }));
     }
 

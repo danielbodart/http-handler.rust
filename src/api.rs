@@ -1,6 +1,7 @@
 use std::path::{Path};
 use std::fs::{File, Metadata, canonicalize};
 use std::io::{Read, Write, Result};
+use std::borrow::Cow;
 use std::fmt;
 use regex::Regex;
 use ast::*;
@@ -212,7 +213,8 @@ impl<'a> Request<'a> {
         self
     }
 
-    pub fn header(mut self, name: &'a str, value: String) -> Request<'a> {
+    pub fn header<V>(mut self, name: &'a str, value: V) -> Request<'a>
+        where V: Into<Cow<'a, str>> {
         self.headers.replace(name, value);
         self
     }

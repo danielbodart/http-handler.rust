@@ -2,6 +2,7 @@ use std::ascii::AsciiExt;
 use std::{fmt, str, usize};
 use std::io::{Read, Write, Result, copy, sink};
 use api::{WriteTo};
+use std::borrow::{Cow, Borrow};
 
 #[derive(PartialEq, Debug)]
 pub struct HttpVersion {
@@ -57,7 +58,8 @@ impl<'a> fmt::Display for StartLine<'a> {
 }
 
 #[derive(PartialEq, Debug)]
-pub struct Headers<'a> (pub Vec<(&'a str, String)>);
+pub struct Headers<'a> (pub Vec<(&'a str, Cow<'a, str>)>);
+
 
 impl<'a> fmt::Display for Headers<'a> {
     fn fmt(&self, format: &mut fmt::Formatter) -> fmt::Result {
@@ -76,10 +78,10 @@ impl<'a> Headers<'a> {
     pub fn get(&'a self, name: &str) -> Option<&'a str> {
         self.pairs().into_iter()
             .find(|&&(key, _)| name.eq_ignore_ascii_case(key))
-            .map(|&(_, ref value)| value.as_str())
+            .map(|&(_, ref value)| value.borrow())
     }
 
-    fn pairs(&'a self) -> &Vec<(&'a str, String)> {
+    fn pairs(&'a self) -> &Vec<(&'a str, Cow<'a, str>)> {
         &self.0
     }
 
@@ -88,9 +90,10 @@ impl<'a> Headers<'a> {
             and_then(|value| value.parse().ok())
     }
 
-    pub fn replace(&mut self, name: &'a str, value: String) -> &mut Headers<'a> {
+    pub fn replace<V>(&mut self, name: &'a str, value: V) -> &mut Headers<'a>
+        where V: Into<Cow<'a, str>>{
         self.0.retain(|&(key, _)| !name.eq_ignore_ascii_case(key));
-        self.0.push((name, value));
+        self.0.push((name, value.into()));
         self
     }
 
@@ -276,6 +279,7 @@ impl<'a> ChunkedBody<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::borrow::Cow;
 
     #[test]
     fn http_version_display() {
@@ -299,7 +303,7 @@ mod tests {
 
     #[test]
     fn headers_display() {
-        assert_eq!(format!("{}", Headers(vec!(("Content-Type", "plain/text".to_string()), ("Content-Length", "3".to_string())))), "Content-Type: plain/text\r\nContent-Length: 3\r\n");
+        assert_eq!(format!("{}", Headers(vec!(("Content-Type", Cow::from("plain/text")), ("Content-Length", Cow::from("3"))))), "Content-Type: plain/text\r\nContent-Length: 3\r\n");
     }
 
     #[test]
@@ -312,7 +316,7 @@ mod tests {
     fn http_message_display() {
         assert_eq!(format!("{}", HttpMessage {
             start_line: StartLine::StatusLine(StatusLine { version: HttpVersion { major: 1, minor: 1, }, code: 200, description: "OK" }),
-            headers: Headers(vec!(("Content-Type", "plain/text".to_string()), ("Content-Length", "3".to_string()))),
+            headers: Headers(vec!(("Content-Type", Cow::from("plain/text")), ("Content-Length", Cow::from("3")))),
             body: MessageBody::Slice(&b"abc"[..]),
         }), "HTTP/1.1 200 OK\r\nContent-Type: plain/text\r\nContent-Length: 3\r\n\r\nabc");
     }
