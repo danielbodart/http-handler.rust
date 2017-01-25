@@ -50,7 +50,7 @@ named!(quoted_text, alt!(htab | space | char_predicate!(or!(ch(0x21), range(0x23
 named!(quoted_pair, preceded!(char!('\\'), alt!(htab | space | vchar | obs_text )));
 
 // quoted-string  = DQUOTE *( qdtext / quoted-pair ) DQUOTE
-named!(quoted_string <String>, delimited!(double_quote, map_res!(many0!(alt!(quoted_text | quoted_pair)), to_string), double_quote));
+named!(quoted_string <Cow<str>>, delimited!(double_quote, map_res!(many0!(alt!(quoted_text | quoted_pair)), to_cow_str), double_quote));
 
 // TODO: full impl
 named!(request_target <&str>, map_res!(is_not!(" "), str::from_utf8));
@@ -150,7 +150,7 @@ named!(chunk_size <u64>, map_res!(map_res!(map_res!(many1!(hex_digit), join_vec)
 named!(chunk_ext_name <&str>, map_res!(token, str::from_utf8));
 
 // chunk-ext-val  = token / quoted-string
-named!(chunk_ext_value <String>, alt!(map_res!(token, to_owned_string) | quoted_string));
+named!(chunk_ext_value <Cow<str>>, alt!(map!(map_res!(token, str::from_utf8), Cow::from) | quoted_string));
 
 //  chunk-ext      = *( BWS  ";" BWS chunk-ext-name [ BWS  "=" BWS chunk-ext-val ] )
 named!(chunk_ext <ChunkExtensions>, map!(many0!(do_parse!(
@@ -302,22 +302,22 @@ mod tests {
 
     #[test]
     fn quoted_string() {
-        assert_eq!(super::quoted_string(&b"\"This is a quoted string\""[..]), Done(&b""[..], "This is a quoted string".to_string()));
-        assert_eq!(super::quoted_string(&b"\"This is a \\\"quoted\\\" string\""[..]), Done(&b""[..], "This is a \"quoted\" string".to_string()));
+        assert_eq!(super::quoted_string(&b"\"This is a quoted string\""[..]), Done(&b""[..], Cow::from("This is a quoted string")));
+        assert_eq!(super::quoted_string(&b"\"This is a \\\"quoted\\\" string\""[..]), Done(&b""[..], Cow::from("This is a \"quoted\" string")));
     }
 
     #[test]
     fn chunk_ext() {
-        assert_eq!(super::chunk_ext(&b";foo=bar"[..]), Done(&b""[..], ChunkExtensions(vec!(("foo", Some("bar".to_string()))))));
+        assert_eq!(super::chunk_ext(&b";foo=bar"[..]), Done(&b""[..], ChunkExtensions(vec!(("foo", Some(Cow::from("bar")))))));
         assert_eq!(super::chunk_ext(&b";foo"[..]), Done(&b""[..], ChunkExtensions(vec!(("foo", None)))));
-        assert_eq!(super::chunk_ext(&b";foo=bar;baz"[..]), Done(&b""[..], ChunkExtensions(vec!(("foo", Some("bar".to_string())), ("baz", None)))));
-        assert_eq!(super::chunk_ext(&b" ; foo = bar ; baz"[..]), Done(&b""[..], ChunkExtensions(vec!(("foo", Some("bar".to_string())), ("baz", None)))));
+        assert_eq!(super::chunk_ext(&b";foo=bar;baz"[..]), Done(&b""[..], ChunkExtensions(vec!(("foo", Some(Cow::from("bar"))), ("baz", None)))));
+        assert_eq!(super::chunk_ext(&b" ; foo = bar ; baz"[..]), Done(&b""[..], ChunkExtensions(vec!(("foo", Some(Cow::from("bar"))), ("baz", None)))));
         assert_eq!(super::chunk_ext(&b""[..]), Done(&b""[..], ChunkExtensions(vec!())));
     }
 
     #[test]
     fn chunk() {
-        assert_eq!(super::chunk(&b"4;foo=bar\r\nWiki\r\n"[..]), Done(&b""[..], Chunk::Slice(ChunkExtensions(vec!(("foo", Some("bar".to_string())))), &b"Wiki"[..])));
+        assert_eq!(super::chunk(&b"4;foo=bar\r\nWiki\r\n"[..]), Done(&b""[..], Chunk::Slice(ChunkExtensions(vec!(("foo", Some(Cow::from("bar"))))), &b"Wiki"[..])));
     }
 
 

@@ -240,7 +240,7 @@ impl<'a> WriteTo for HttpMessage<'a> {
 }
 
 #[derive(PartialEq, Debug)]
-pub struct ChunkExtensions<'a> (pub Vec<(&'a str, Option<String>)>);
+pub struct ChunkExtensions<'a> (pub Vec<(&'a str, Option<Cow<'a, str>>)>);
 
 impl<'a> fmt::Display for ChunkExtensions<'a> {
     fn fmt(&self, format: &mut fmt::Formatter) -> fmt::Result {
