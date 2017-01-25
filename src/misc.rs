@@ -121,10 +121,6 @@ pub fn to_cow_str(vec: Vec<&[u8]>) -> Result<Cow<str>, str::Utf8Error> {
     }
 }
 
-pub fn to_owned_string(slice: &[u8]) -> Result<String, string::FromUtf8Error> {
-    String::from_utf8(slice.to_vec())
-}
-
 
 #[cfg(test)]
 mod tests {
