@@ -58,13 +58,35 @@ impl<'a> fmt::Display for StartLine<'a> {
 }
 
 #[derive(PartialEq, Debug)]
-pub struct Headers<'a> (pub Vec<(&'a str, Cow<'a, str>)>);
+pub struct Header<'a> {
+    pub name: Cow<'a, str>,
+    pub value: Cow<'a, str>,
+}
+
+impl<'a> Header<'a> {
+    pub fn new<N, V>(name: N, value: V) -> Header<'a>
+        where N: Into<Cow<'a, str>>,
+              V: Into<Cow<'a, str>> {
+        Header { name: name.into(), value: value.into(), }
+    }
+
+    pub fn name(&self) -> &str {
+        self.name.borrow()
+    }
+
+    pub fn value(&self) -> &str {
+        self.value.borrow()
+    }
+}
+
+#[derive(PartialEq, Debug)]
+pub struct Headers<'a> (pub Vec<Header<'a>>);
 
 
 impl<'a> fmt::Display for Headers<'a> {
     fn fmt(&self, format: &mut fmt::Formatter) -> fmt::Result {
-        for &(name, ref value) in &self.0[0..self.0.len()] {
-            write!(format, "{}: {}\r\n", name, value)?;
+        for header in &self.0[0..self.0.len()] {
+            write!(format, "{}: {}\r\n", header.name(), header.value())?;
         }
         Ok(())
     }
@@ -77,11 +99,11 @@ impl<'a> Headers<'a> {
 
     pub fn get(&'a self, name: &str) -> Option<&'a str> {
         self.pairs().into_iter()
-            .find(|&&(key, _)| name.eq_ignore_ascii_case(key))
-            .map(|&(_, ref value)| value.borrow())
+            .find(|header| name.eq_ignore_ascii_case(header.name()))
+            .map(|header| header.value())
     }
 
-    fn pairs(&'a self) -> &Vec<(&'a str, Cow<'a, str>)> {
+    fn pairs(&'a self) -> &Vec<Header<'a>> {
         &self.0
     }
 
@@ -91,14 +113,14 @@ impl<'a> Headers<'a> {
     }
 
     pub fn replace<V>(&mut self, name: &'a str, value: V) -> &mut Headers<'a>
-        where V: Into<Cow<'a, str>>{
-        self.0.retain(|&(key, _)| !name.eq_ignore_ascii_case(key));
-        self.0.push((name, value.into()));
+        where V: Into<Cow<'a, str>> {
+        self.0.retain(|header| !name.eq_ignore_ascii_case(header.name()));
+        self.0.push(Header::new(name, value));
         self
     }
 
     pub fn remove(&mut self, name: &str) -> &mut Headers<'a> {
-        self.0.retain(|&(key, _)| !name.eq_ignore_ascii_case(key));
+        self.0.retain(|header| !name.eq_ignore_ascii_case(header.name()));
         self
     }
 }
@@ -143,7 +165,7 @@ impl<'a> MessageBody<'a> {
     }
 }
 
-impl<'a> Drop for MessageBody<'a>{
+impl<'a> Drop for MessageBody<'a> {
     fn drop(&mut self) {
         match *self {
             MessageBody::Reader(ref mut reader) => {
@@ -279,7 +301,6 @@ impl<'a> ChunkedBody<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::borrow::Cow;
 
     #[test]
     fn http_version_display() {
@@ -303,7 +324,7 @@ mod tests {
 
     #[test]
     fn headers_display() {
-        assert_eq!(format!("{}", Headers(vec!(("Content-Type", Cow::from("plain/text")), ("Content-Length", Cow::from("3"))))), "Content-Type: plain/text\r\nContent-Length: 3\r\n");
+        assert_eq!(format!("{}", Headers(vec!(Header::new("Content-Type", "plain/text"), Header::new("Content-Length", "3")))), "Content-Type: plain/text\r\nContent-Length: 3\r\n");
     }
 
     #[test]
@@ -316,7 +337,7 @@ mod tests {
     fn http_message_display() {
         assert_eq!(format!("{}", HttpMessage {
             start_line: StartLine::StatusLine(StatusLine { version: HttpVersion { major: 1, minor: 1, }, code: 200, description: "OK" }),
-            headers: Headers(vec!(("Content-Type", Cow::from("plain/text")), ("Content-Length", Cow::from("3")))),
+            headers: Headers(vec!(Header::new("Content-Type", "plain/text"), Header::new("Content-Length", "3"))),
             body: MessageBody::Slice(&b"abc"[..]),
         }), "HTTP/1.1 200 OK\r\nContent-Type: plain/text\r\nContent-Length: 3\r\n\r\nabc");
     }
