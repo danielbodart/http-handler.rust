@@ -235,6 +235,12 @@ impl<'a> Read for Fragmented<'a> {
     }
 }
 
+pub trait Streamer<'a> {
+    type Item: 'a;
+
+    fn next(&'a mut self) -> Option<Self::Item>;
+}
+
 
 #[cfg(test)]
 mod tests {

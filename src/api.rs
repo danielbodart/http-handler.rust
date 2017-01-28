@@ -1,12 +1,13 @@
 use std::path::{Path};
 use std::fs::{File, Metadata, canonicalize};
-use std::io::{Read, Write, Result};
+use std::io::{BufRead, Read, Write, Result};
 use std::borrow::Cow;
 use std::fmt;
 use regex::Regex;
 use ast::*;
 use grammar::*;
-use parser::result;
+use parser::*;
+use io::*;
 
 
 pub trait HttpHandler {
@@ -125,7 +126,7 @@ impl<'a> fmt::Display for Uri<'a> {
 }
 
 #[derive(PartialEq, Debug)]
-pub enum Message<'a>{
+pub enum Message<'a> {
     Request(Request<'a>),
     Response(Response<'a>),
 }
@@ -384,9 +385,45 @@ impl<'a> WriteTo for Response<'a> {
     }
 }
 
+pub struct ChunkStream<R> where R: BufRead + Sized {
+    pub read: R,
+    pub consumed: usize,
+}
+
+impl<R> ChunkStream<R> where R: BufRead + Sized {
+    pub fn new(read: R) -> ChunkStream<R> {
+        ChunkStream { read: read, consumed: 0 }
+    }
+}
+
+impl<'a, R> Streamer<'a> for ChunkStream<R> where R: BufRead + Sized {
+    type Item = Result<Chunk<'a>>;
+
+    fn next(&'a mut self) -> Option<Self::Item> {
+        if self.consumed > 0 {
+            self.read.consume(self.consumed);
+        }
+        let buffer = self.read.fill_buf().unwrap();
+        if buffer.len() == 0 {
+            return None;
+        }
+        let ((size, extensions), remainder) = result(chunk_head(buffer)).unwrap();
+        if size > 0 {
+            let s = size as usize;
+            self.consumed = (buffer.len() - remainder.len()) + s + 2;
+            return Some(Ok(Chunk::Slice(extensions, &remainder[..s])))
+        } else {
+            let (trailers, remainder) = result(headers(remainder)).unwrap();
+            self.consumed = (buffer.len() - remainder.len()) + 2;
+            return Some(Ok(Chunk::Last(extensions, trailers)))
+        }
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
-    use super::{Request, Uri};
+    use super::*;
 
     #[test]
     fn can_parse_uri() {
@@ -435,5 +472,29 @@ mod tests {
                 panic!("Should have matched");
             }
         }
+    }
+
+    #[test]
+    fn can_parse_chunk_stream() {
+        use io::{BufferedRead, Streamer};
+        use ast::{Chunk, ChunkExtensions, Headers};
+
+        let data = &b"4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n0\r\n\r\n"[..];
+        println!("{:?}", data);
+        let buffered = BufferedRead::new(data);
+        let mut stream = ChunkStream::new(buffered);
+        if let Some(Ok(chunk)) = stream.next() {
+            assert_eq!(chunk, Chunk::Slice(ChunkExtensions(vec![]), &b"Wiki"[..]));
+        }
+        if let Some(Ok(chunk)) = stream.next() {
+            assert_eq!(chunk, Chunk::Slice(ChunkExtensions(vec![]), &b"pedia"[..]));
+        }
+        if let Some(Ok(chunk)) = stream.next() {
+            assert_eq!(chunk, Chunk::Slice(ChunkExtensions(vec![]), &b" in\r\n\r\nchunks."[..]));
+        }
+        if let Some(Ok(chunk)) = stream.next() {
+            assert_eq!(chunk, Chunk::Last(ChunkExtensions(vec![]), Headers::new()));
+        }
+        assert!(stream.next().is_none());
     }
 }

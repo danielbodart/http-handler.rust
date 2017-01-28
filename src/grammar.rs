@@ -9,94 +9,94 @@ use ast::*;
 use predicates::*;
 
 // HTTP-name     = %x48.54.54.50 ; "HTTP", case-sensitive
-named!(http_name, tag!("HTTP"));
+named!(pub http_name, tag!("HTTP"));
 
 //  DIGIT          =  %x30-39 ; 0-9
-named!(digit, char_predicate!(is_digit));
+named!(pub digit, char_predicate!(is_digit));
 
 // HEXDIG (hexadecimal 0-9/A-F/a-f)
-named!(hex_digit, char_predicate!(is_hex_digit));
+named!(pub hex_digit, char_predicate!(is_hex_digit));
 
 // HTTP-version  = HTTP-name "/" DIGIT "." DIGIT
-named!(http_version <HttpVersion>, do_parse!(
+named!(pub http_version <HttpVersion>, do_parse!(
     http_name >> tag!("/") >> major: digit >> tag!(".") >> minor: digit >>
     (HttpVersion { major: asci_digit(major), minor: asci_digit(minor)})
   ));
 
 // SP             =  %x20
-named!(space, tag!(" "));
+named!(pub space, tag!(" "));
 // CRLF           =  CR LF ; Internet standard newline
-named!(crlf, tag!("\r\n"));
+named!(pub crlf, tag!("\r\n"));
 // HTAB           =  %x09 ; horizontal tab
-named!(htab, tag!("\t"));
+named!(pub htab, tag!("\t"));
 // VCHAR          =  %x21-7E ; visible (printing) characters
-named!(vchar, char_predicate!(range(0x21,0x7E)));
+named!(pub vchar, char_predicate!(range(0x21,0x7E)));
 // obs-text       = %x80-FF ; obsolete text
-named!(obs_text, char_predicate!(range(0x80,0xFF)));
+named!(pub obs_text, char_predicate!(range(0x80,0xFF)));
 // OWS            = *( SP / HTAB ) ; optional whitespace
-named!(ows, map_res!(many0!(alt!(space | htab)), join_vec));
+named!(pub ows, map_res!(many0!(alt!(space | htab)), join_vec));
 // RWS            = 1*( SP / HTAB ) ; required whitespace
-named!(rws, map_res!(many1!(alt!(space | htab)), join_vec));
+named!(pub rws, map_res!(many1!(alt!(space | htab)), join_vec));
 // BWS            = OWS ; "bad" whitespace
 // TODO alias BWS
 
 // DQUOTE         =  %x22 ; " (Double Quote)
-named!(double_quote, tag!("\""));
+named!(pub double_quote, tag!("\""));
 
 // qdtext         = HTAB / SP / %x21 / %x23-5B / %x5D-7E / obs-text
-named!(quoted_text, alt!(htab | space | char_predicate!(or!(ch(0x21), range(0x23,0x5B), range(0x5D,0x7E))) | obs_text ));
+named!(pub quoted_text, alt!(htab | space | char_predicate!(or!(ch(0x21), range(0x23,0x5B), range(0x5D,0x7E))) | obs_text ));
 
 // quoted-pair    = "\" ( HTAB / SP / VCHAR / obs-text )
-named!(quoted_pair, preceded!(char!('\\'), alt!(htab | space | vchar | obs_text )));
+named!(pub quoted_pair, preceded!(char!('\\'), alt!(htab | space | vchar | obs_text )));
 
 // quoted-string  = DQUOTE *( qdtext / quoted-pair ) DQUOTE
-named!(quoted_string <Cow<str>>, delimited!(double_quote, map_res!(many0!(alt!(quoted_text | quoted_pair)), to_cow_str), double_quote));
+named!(pub quoted_string <Cow<str>>, delimited!(double_quote, map_res!(many0!(alt!(quoted_text | quoted_pair)), to_cow_str), double_quote));
 
 // TODO: full impl
-named!(request_target <&str>, map_res!(is_not!(" "), str::from_utf8));
+named!(pub request_target <&str>, map_res!(is_not!(" "), str::from_utf8));
 
 
 // tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." / "^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA
-named!(tchar, char_predicate!(or!(among("!#$%&'*+-.^_`|~"), is_digit, is_alphabetic)));
+named!(pub tchar, char_predicate!(or!(among("!#$%&'*+-.^_`|~"), is_digit, is_alphabetic)));
 
 ////token = 1*tchar
-named!(token, map_res!(many1!(tchar), join_vec));
+named!(pub token, map_res!(many1!(tchar), join_vec));
 
 //method = token
-named!(method <&str>, map_res!(token, str::from_utf8));
+named!(pub method <&str>, map_res!(token, str::from_utf8));
 
 //request-line   = method SP request-target SP HTTP-version CRLF
-named!(request_line <RequestLine>, do_parse!(
+named!(pub request_line <RequestLine>, do_parse!(
     method: method >> space >> request_target: request_target >> space >> version: http_version >> crlf >>
     (RequestLine { method: method, request_target: request_target, version: version })
   ));
 
 //status-code    = 3DIGIT
-named!(status_code <u16>, map_res!(map_res!(map_res!(many_m_n!(3,3, digit), join_vec), str::from_utf8), parse_u16));
+named!(pub status_code <u16>, map_res!(map_res!(map_res!(many_m_n!(3,3, digit), join_vec), str::from_utf8), parse_u16));
 
 //reason-phrase  = *( HTAB / SP / VCHAR / obs-text )
-named!(reason_phrase <&str>, map_res!(map_res!(many0!(alt!(htab | space | vchar | obs_text)), join_vec), str::from_utf8));
+named!(pub reason_phrase <&str>, map_res!(map_res!(many0!(alt!(htab | space | vchar | obs_text)), join_vec), str::from_utf8));
 
 // status-line = HTTP-version SP status-code SP reason-phrase CRLF
-named!(status_line <StatusLine>, do_parse!(
+named!(pub status_line <StatusLine>, do_parse!(
     version: http_version >> space >> status: status_code >> space >> reason_phrase:reason_phrase >> crlf >>
     (StatusLine { version: version, code: status, description: reason_phrase })
   ));
 
 
 // start-line     = request-line / status-line
-named!(start_line <StartLine>, alt!(map!(request_line, StartLine::RequestLine) | map!(status_line, StartLine::StatusLine)));
+named!(pub start_line <StartLine>, alt!(map!(request_line, StartLine::RequestLine) | map!(status_line, StartLine::StatusLine)));
 
 // field-name     = token
-named!(field_name <&str>, map_res!(token, str::from_utf8));
+named!(pub field_name <&str>, map_res!(token, str::from_utf8));
 
 // field-vchar    = VCHAR / obs-text
-named!(field_vchar, alt!(vchar | obs_text));
+named!(pub field_vchar, alt!(vchar | obs_text));
 
-named!(spaces, map_res!(many1!(alt!(space | htab)), join_vec));
+named!(pub spaces, map_res!(many1!(alt!(space | htab)), join_vec));
 
 // field-content  = field-vchar [ 1*( SP / HTAB ) field-vchar ]
-named!(field_content, do_parse!(
+named!(pub field_content, do_parse!(
     chr:field_vchar >>
     optional: opt!(complete!(map_res!(pair!( spaces, field_vchar), join_pair))) >>
     (match optional {
@@ -106,13 +106,13 @@ named!(field_content, do_parse!(
   ));
 
 // obs-fold       = CRLF 1*( SP / HTAB ) ; obsolete line folding
-named!(obs_fold, do_parse!( crlf >> spaces >> (Default::default()) ));
+named!(pub obs_fold, do_parse!( crlf >> spaces >> (Default::default()) ));
 
 // field-value    = *( field-content / obs-fold )
-named!(field_value <Cow<str>>, map_res!(many0!(alt!(field_content | obs_fold)), to_cow_str));
+named!(pub field_value <Cow<str>>, map_res!(many0!(alt!(field_content | obs_fold)), to_cow_str));
 
 // header-field   = field-name ":" OWS field-value OWS
-named!(header_field <Header>, do_parse!(
+named!(pub header_field <Header>, do_parse!(
     name:field_name >> tag!(":") >> ows >> value:field_value >> ows >>
     (Header::new(name, value))
   ));
@@ -130,7 +130,7 @@ pub fn message_body<'a>(slice: &'a [u8], headers: &Headers<'a>) -> IResult<&'a [
     }
 }
 
-named!(headers <Headers>, map!(many0!(terminated!(header_field, crlf)), Headers));
+named!(pub headers <Headers>, map!(many0!(terminated!(header_field, crlf)), Headers));
 
 named!(pub message_head <MessageHead> , do_parse!(
     start_line:start_line >> headers:headers >> crlf >>
@@ -144,29 +144,34 @@ named!(pub http_message <HttpMessage> , do_parse!(
   ));
 
 // chunk-size     = 1*HEXDIG
-named!(chunk_size <u64>, map_res!(map_res!(map_res!(many1!(hex_digit), join_vec), str::from_utf8), parse_hex));
+named!(pub chunk_size <u64>, map_res!(map_res!(map_res!(many1!(hex_digit), join_vec), str::from_utf8), parse_hex));
 
 // chunk-ext-name = token
-named!(chunk_ext_name <&str>, map_res!(token, str::from_utf8));
+named!(pub chunk_ext_name <&str>, map_res!(token, str::from_utf8));
 
 // chunk-ext-val  = token / quoted-string
-named!(chunk_ext_value <Cow<str>>, alt!(map!(map_res!(token, str::from_utf8), Cow::from) | quoted_string));
+named!(pub chunk_ext_value <Cow<str>>, alt!(map!(map_res!(token, str::from_utf8), Cow::from) | quoted_string));
 
 //  chunk-ext      = *( BWS  ";" BWS chunk-ext-name [ BWS  "=" BWS chunk-ext-val ] )
-named!(chunk_ext <ChunkExtensions>, map!(many0!(do_parse!(
+named!(pub chunk_ext <ChunkExtensions>, map!(many0!(do_parse!(
     ows >> char!(';') >> ows >> name:chunk_ext_name >> value:opt!(complete!(preceded!(delimited!(ows, char!('='), ows), chunk_ext_value))) >>
     (name, value)
 )), ChunkExtensions));
 
 // chunk-data     = 1*OCTET ; a sequence of chunk-size octets
 // chunk          = chunk-size [ chunk-ext ] CRLF chunk-data CRLF
-named!(chunk <Chunk>, do_parse!(
+named!(pub chunk <Chunk>, do_parse!(
     size:chunk_size >> extensions:chunk_ext >> crlf >> data:cond_reduce!(size > 0, take!(size)) >> crlf >>
     (Chunk::Slice(extensions, data))
 ));
 
+named!(pub chunk_head <(u64, ChunkExtensions)>, do_parse!(
+    size:chunk_size >> extensions:chunk_ext >> crlf >>
+    ((size, extensions))
+));
+
 // last-chunk     = 1*("0") [ chunk-ext ] CRLF
-named!(last_chunk <ChunkExtensions>, do_parse!(
+named!(pub last_chunk <ChunkExtensions>, do_parse!(
     many1!(char!('0')) >> extensions:chunk_ext >> crlf >>
     (extensions)
 ));
@@ -175,7 +180,7 @@ named!(last_chunk <ChunkExtensions>, do_parse!(
 // TODO: Alias headers
 
 // chunked-body   = *chunk last-chunk trailer-part CRLF
-named!(chunked_body <ChunkedBody>, do_parse!(
+named!(pub chunked_body <ChunkedBody>, do_parse!(
     chunks:many0!(chunk) >> last:last_chunk >> trailers:headers >> crlf >>
     (ChunkedBody::new(chunks, last, trailers))
 ));
