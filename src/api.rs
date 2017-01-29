@@ -210,12 +210,12 @@ impl<'a> Request<'a> {
         Request::request("OPTION", url)
     }
 
-    pub fn method(mut self, method: &'a str) -> Request<'a> {
+    pub fn method(mut self, method: &'a str) -> Self {
         self.method = method;
         self
     }
 
-    pub fn header<V>(mut self, name: &'a str, value: V) -> Request<'a>
+    pub fn header<V>(mut self, name: &'a str, value: V) -> Self
         where V: Into<Cow<'a, str>> {
         self.headers.replace(name, value);
         self
@@ -225,9 +225,29 @@ impl<'a> Request<'a> {
         self.headers.get(name)
     }
 
-    pub fn remove_header(mut self, name: &str) -> Request<'a> {
+    pub fn remove_header(mut self, name: &str) -> Self {
         self.headers.remove(name);
         self
+    }
+}
+
+pub trait Req<'a> {
+    fn method(&mut self) -> &mut &'a str;
+    fn headers(&mut self) -> &mut Headers<'a>;
+
+    fn header_2<V>(mut self, name: &'a str, value: V) -> Self
+        where V: Into<Cow<'a, str>>, Self: Sized {
+        self.headers().replace(name, value);
+        self
+    }
+}
+
+impl<'a> Req<'a> for Request<'a> {
+    fn method(&mut self) -> &mut &'a str {
+        &mut self.method
+    }
+    fn headers(&mut self) -> &mut Headers<'a> {
+        &mut self.headers
     }
 }
 
@@ -388,41 +408,61 @@ impl<'a> WriteTo for Response<'a> {
 
 pub struct ChunkStream<R> where R: BufRead + Sized {
     pub read: R,
-    pub consumed: usize,
+    pub state: ChunkStreamState,
+}
+
+pub enum ChunkStreamState {
+    NotStarted,
+    Consumed(usize),
+    Last(usize),
+    Finished,
 }
 
 impl<R> ChunkStream<R> where R: BufRead + Sized {
     pub fn new(read: R) -> ChunkStream<R> {
-        ChunkStream { read: read, consumed: 0 }
+        ChunkStream { read: read, state: ChunkStreamState::NotStarted }
     }
 }
 
-// TODO: Handle not reading past end, handle remainder in buffer
 impl<'a, R> Streamer<'a> for ChunkStream<R> where R: BufRead + Sized {
     type Item = Result<Chunk<'a>>;
 
     fn next(&'a mut self) -> Option<Self::Item> {
-        if self.consumed > 0 {
-            self.read.consume(self.consumed);
+        match self.state {
+            ChunkStreamState::Last(consumed) => {
+                self.read.consume(consumed);
+                self.state = ChunkStreamState::Finished;
+                return None;
+            },
+            ChunkStreamState::Finished => {
+                return None;
+            },
+            ChunkStreamState::Consumed(consumed) => {
+                self.read.consume(consumed)
+            },
+            _ => {}
         }
+
         let buffer = self.read.fill_buf().unwrap();
         if buffer.len() == 0 {
+            self.state = ChunkStreamState::Finished;
             return None;
         }
+
         let ((size, extensions), remainder) = result(chunk_head(buffer)).unwrap();
         if size > 0 {
             let s = size as usize;
-            self.consumed = (buffer.len() - remainder.len()) + s + 2;
+            self.state = ChunkStreamState::Consumed((buffer.len() - remainder.len()) + s + 2);
             return Some(Ok(Chunk::Slice(extensions, &remainder[..s])))
         } else {
             let (trailers, remainder) = result(headers(remainder)).unwrap();
-            self.consumed = (buffer.len() - remainder.len()) + 2;
+            self.state = ChunkStreamState::Last((buffer.len() - remainder.len()) + 2);
             return Some(Ok(Chunk::Last(extensions, trailers)))
         }
     }
 }
 
-impl<'a, R> Read for ChunkStream<R> where R: BufRead + Sized{
+impl<'a, R> Read for ChunkStream<R> where R: BufRead + Sized {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         match self.next() {
             None => Ok(0),
@@ -483,7 +523,7 @@ mod tests {
 
     #[test]
     fn can_pattern_match_a_request() {
-        let request = Request::get("/some/path").header("Content-Type", "text/plain".to_string());
+        let request = Request::get("/some/path").header("Content-Type", "text/plain");
         match request {
             Request { method: "GET", uri: Uri { path: "/some/path", .. }, ref headers, .. } if headers.get("Content-Type") == Some("text/plain") => {},
             _ => {
@@ -494,10 +534,11 @@ mod tests {
 
     #[test]
     fn can_parse_chunk_stream() {
-        use io::{BufferedRead, Streamer};
+        use std::io::BufRead;
+        use io::{BufferedRead, Streamer, Fragmented};
         use ast::{Chunk, ChunkExtensions, Headers};
 
-        let data = &b"4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n0\r\n\r\n"[..];
+        let data = &b"4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n0\r\n\r\nGET /new/request HTTP/1.1\r\n"[..];
         println!("{:?}", data);
         let buffered = BufferedRead::new(data);
         let mut stream = ChunkStream::new(buffered);
@@ -514,5 +555,8 @@ mod tests {
             assert_eq!(chunk, Chunk::Last(ChunkExtensions(vec![]), Headers::new()));
         }
         assert!(stream.next().is_none());
+
+        let remainder = stream.read.fill_buf().unwrap();
+        assert_eq!(remainder, &b"GET /new/request HTTP/1.1\r\n"[..]);
     }
 }
