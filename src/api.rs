@@ -443,21 +443,24 @@ impl<'a, R> Streamer<'a> for ChunkStream<R> where R: BufRead + Sized {
             _ => {}
         }
 
-        let buffer = self.read.fill_buf().unwrap();
-        if buffer.len() == 0 {
-            self.state = ChunkStreamState::Finished;
-            return None;
-        }
+        loop {
+            let buffer = self.read.fill_buf().unwrap();
+            if buffer.len() == 0 {
+                self.state = ChunkStreamState::Finished;
+                return None;
+            }
 
-        let ((size, extensions), remainder) = result(chunk_head(buffer)).unwrap();
-        if size > 0 {
-            let s = size as usize;
-            self.state = ChunkStreamState::Consumed((buffer.len() - remainder.len()) + s + 2);
-            return Some(Ok(Chunk::Slice(extensions, &remainder[..s])))
-        } else {
-            let (trailers, remainder) = result(headers(remainder)).unwrap();
-            self.state = ChunkStreamState::Last((buffer.len() - remainder.len()) + 2);
-            return Some(Ok(Chunk::Last(extensions, trailers)))
+            match Chunk::read(buffer) {
+                Ok((last @ Chunk::Last(..), consumed)) => {
+                    self.state = ChunkStreamState::Last(consumed);
+                    return Some(Ok(last))
+                },
+                Ok((chunk, consumed)) => {
+                    self.state = ChunkStreamState::Consumed(consumed);
+                    return Some(Ok(chunk))
+                },
+                Err(e) => return Some(Err(e))
+            };
         }
     }
 }
@@ -472,7 +475,9 @@ impl<'a, R> Read for ChunkStream<R> where R: BufRead + Sized {
                 buf[..size].copy_from_slice(slice);
                 Ok(size)
             },
-            Some(Ok(Chunk::Last(..))) => Ok(0),
+            Some(Ok(Chunk::Last(..))) => {
+                Ok(0)
+            },
             Some(Err(e)) => Err(e),
         }
     }
@@ -535,11 +540,10 @@ mod tests {
     #[test]
     fn can_parse_chunk_stream() {
         use std::io::BufRead;
-        use io::{BufferedRead, Streamer, Fragmented};
+        use io::{BufferedRead, Streamer};
         use ast::{Chunk, ChunkExtensions, Headers};
 
         let data = &b"4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n0\r\n\r\nGET /new/request HTTP/1.1\r\n"[..];
-        println!("{:?}", data);
         let buffered = BufferedRead::new(data);
         let mut stream = ChunkStream::new(buffered);
         if let Some(Ok(chunk)) = stream.next() {
@@ -557,6 +561,23 @@ mod tests {
         assert!(stream.next().is_none());
 
         let remainder = stream.read.fill_buf().unwrap();
+        assert_eq!(remainder, &b"GET /new/request HTTP/1.1\r\n"[..]);
+    }
+
+    #[test]
+    fn can_read_chunked_stream() {
+        use std::io::{BufRead, Read};
+        use io::{BufferedRead};
+
+        let data = &b"4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n0\r\n\r\nGET /new/request HTTP/1.1\r\n"[..];
+        let stream = ChunkStream::new(BufferedRead::new(data));
+        let mut buffered = BufferedRead::new(stream);
+
+        let mut result = String::new();
+        buffered.read_to_string(&mut result).unwrap();
+
+        assert_eq!(result, "Wikipedia in\r\n\r\nchunks.".to_owned());
+        let remainder = buffered.inner.read.fill_buf().unwrap();
         assert_eq!(remainder, &b"GET /new/request HTTP/1.1\r\n"[..]);
     }
 }

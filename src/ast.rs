@@ -283,6 +283,24 @@ pub enum Chunk<'a> {
     Last(ChunkExtensions<'a>, Headers<'a>),
 }
 
+impl<'a> Chunk<'a> {
+    pub fn read(slice: &[u8]) -> Result<(Chunk, usize)> {
+        use grammar::*;
+        use parser::result;
+
+        let ((size, extensions), remainder) = result(chunk_head(slice))?;
+        if size > 0 {
+            let s = size as usize;
+            let consumed = (slice.len() - remainder.len()) + s + 2;
+            return Ok((Chunk::Slice(extensions, &remainder[..s]), consumed))
+        } else {
+            let (trailers, remainder) = result(headers(remainder))?;
+            let consumed = (slice.len() - remainder.len()) + 2;
+            return Ok((Chunk::Last(extensions, trailers), consumed))
+        }
+    }
+}
+
 #[derive(PartialEq, Debug)]
 pub struct ChunkedBody<'a> {
     chunks: Vec<Chunk<'a>>,
