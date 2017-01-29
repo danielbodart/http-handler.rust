@@ -1,6 +1,7 @@
 use std::path::{Path};
 use std::fs::{File, Metadata, canonicalize};
 use std::io::{BufRead, Read, Write, Result};
+use std::cmp::min;
 use std::borrow::Cow;
 use std::fmt;
 use regex::Regex;
@@ -396,6 +397,7 @@ impl<R> ChunkStream<R> where R: BufRead + Sized {
     }
 }
 
+// TODO: Handle not reading past end, handle remainder in buffer
 impl<'a, R> Streamer<'a> for ChunkStream<R> where R: BufRead + Sized {
     type Item = Result<Chunk<'a>>;
 
@@ -416,6 +418,22 @@ impl<'a, R> Streamer<'a> for ChunkStream<R> where R: BufRead + Sized {
             let (trailers, remainder) = result(headers(remainder)).unwrap();
             self.consumed = (buffer.len() - remainder.len()) + 2;
             return Some(Ok(Chunk::Last(extensions, trailers)))
+        }
+    }
+}
+
+impl<'a, R> Read for ChunkStream<R> where R: BufRead + Sized{
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+        match self.next() {
+            None => Ok(0),
+            Some(Ok(Chunk::Slice(_, slice))) => {
+                // TODO: handle when buf is too small
+                let size = min(slice.len(), buf.len());
+                buf[..size].copy_from_slice(slice);
+                Ok(size)
+            },
+            Some(Ok(Chunk::Last(..))) => Ok(0),
+            Some(Err(e)) => Err(e),
         }
     }
 }
