@@ -424,7 +424,7 @@ impl<R> ChunkStream<R> where R: BufRead + Sized {
         ChunkStream { read: read, state: ChunkStreamState::NotStarted }
     }
 
-    pub fn update_state(&mut self){
+    pub fn update_state(&mut self) {
         match self.state {
             ChunkStreamState::Last(consumed) => {
                 self.read.consume(consumed);
@@ -438,9 +438,9 @@ impl<R> ChunkStream<R> where R: BufRead + Sized {
     }
 }
 
-impl<'a, R> Drop for ChunkStream<R> where R: BufRead + Sized{
+impl<'a, R> Drop for ChunkStream<R> where R: BufRead + Sized {
     fn drop(&mut self) {
-        self.update_state();
+        while let Some(Ok(_)) = self.next() {}
     }
 }
 
@@ -587,6 +587,22 @@ mod tests {
             let mut result = String::new();
             consumer.read_to_string(&mut result).unwrap();
             assert_eq!(result, "Wikipedia in\r\n\r\nchunks.".to_owned());
+        }
+        {
+            let remainder = producer.fill_buf().unwrap();
+            assert_eq!(remainder, &b"GET /new/request HTTP/1.1\r\n"[..]);
+        }
+    }
+
+    #[test]
+    fn chunked_stream_always_reads_to_end() {
+        use std::io::{BufRead};
+        use io::{BufferedRead};
+
+        let data = &b"4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n0\r\n\r\nGET /new/request HTTP/1.1\r\n"[..];
+        let mut producer = BufferedRead::new(data);
+        {
+            ChunkStream::new(&mut producer);
         }
         {
             let remainder = producer.fill_buf().unwrap();
