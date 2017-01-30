@@ -411,6 +411,7 @@ pub struct ChunkStream<R> where R: BufRead + Sized {
     pub state: ChunkStreamState,
 }
 
+#[derive(PartialEq, Debug)]
 pub enum ChunkStreamState {
     NotStarted,
     Consumed(usize),
@@ -422,25 +423,34 @@ impl<R> ChunkStream<R> where R: BufRead + Sized {
     pub fn new(read: R) -> ChunkStream<R> {
         ChunkStream { read: read, state: ChunkStreamState::NotStarted }
     }
+
+    pub fn update_state(&mut self){
+        match self.state {
+            ChunkStreamState::Last(consumed) => {
+                self.read.consume(consumed);
+                self.state = ChunkStreamState::Finished;
+            },
+            ChunkStreamState::Consumed(consumed) => {
+                self.read.consume(consumed)
+            },
+            _ => {}
+        }
+    }
+}
+
+impl<'a, R> Drop for ChunkStream<R> where R: BufRead + Sized{
+    fn drop(&mut self) {
+        self.update_state();
+    }
 }
 
 impl<'a, R> Streamer<'a> for ChunkStream<R> where R: BufRead + Sized {
     type Item = Result<Chunk<'a>>;
 
     fn next(&'a mut self) -> Option<Self::Item> {
-        match self.state {
-            ChunkStreamState::Last(consumed) => {
-                self.read.consume(consumed);
-                self.state = ChunkStreamState::Finished;
-                return None;
-            },
-            ChunkStreamState::Finished => {
-                return None;
-            },
-            ChunkStreamState::Consumed(consumed) => {
-                self.read.consume(consumed)
-            },
-            _ => {}
+        self.update_state();
+        if self.state == ChunkStreamState::Finished {
+            return None;
         }
 
         loop {
@@ -570,14 +580,17 @@ mod tests {
         use io::{BufferedRead};
 
         let data = &b"4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n0\r\n\r\nGET /new/request HTTP/1.1\r\n"[..];
-        let stream = ChunkStream::new(BufferedRead::new(data));
-        let mut buffered = BufferedRead::new(stream);
+        let mut producer = BufferedRead::new(data);
+        {
+            let mut consumer = BufferedRead::new(ChunkStream::new(&mut producer));
 
-        let mut result = String::new();
-        buffered.read_to_string(&mut result).unwrap();
-
-        assert_eq!(result, "Wikipedia in\r\n\r\nchunks.".to_owned());
-        let remainder = buffered.inner.read.fill_buf().unwrap();
-        assert_eq!(remainder, &b"GET /new/request HTTP/1.1\r\n"[..]);
+            let mut result = String::new();
+            consumer.read_to_string(&mut result).unwrap();
+            assert_eq!(result, "Wikipedia in\r\n\r\nchunks.".to_owned());
+        }
+        {
+            let remainder = producer.fill_buf().unwrap();
+            assert_eq!(remainder, &b"GET /new/request HTTP/1.1\r\n"[..]);
+        }
     }
 }
