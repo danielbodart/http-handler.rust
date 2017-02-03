@@ -12,3 +12,4 @@ pub mod api;
 pub mod process;
 pub mod server;
 pub mod io;
+pub mod transducers;
