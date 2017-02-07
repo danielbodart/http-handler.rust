@@ -67,7 +67,7 @@ impl<'a> Header<'a> {
     pub fn new<N, V>(name: N, value: V) -> Header<'a>
         where N: Into<Cow<'a, str>>,
               V: Into<Cow<'a, str>> {
-        Header { name: name.into(), value: value.into(), }
+        Header { name: name.into(), value: value.into() }
     }
 
     pub fn name(&self) -> &str {
@@ -153,7 +153,7 @@ impl<'a> MessageBody<'a> {
             MessageBody::Reader(_) => {
                 format.write_str("streaming")
             },
-            MessageBody::Slice(ref slice) => {
+            MessageBody::Slice(slice) => {
                 if let Ok(result) = str::from_utf8(slice) {
                     format.write_str(result)
                 } else {
@@ -167,11 +167,8 @@ impl<'a> MessageBody<'a> {
 
 impl<'a> Drop for MessageBody<'a> {
     fn drop(&mut self) {
-        match *self {
-            MessageBody::Reader(ref mut reader) => {
-                copy(reader, &mut sink()).expect("should be able to copy");
-            },
-            _ => {},
+        if let MessageBody::Reader(ref mut reader) = *self {
+            copy(reader, &mut sink()).expect("should be able to copy");
         }
     }
 }
@@ -179,9 +176,8 @@ impl<'a> Drop for MessageBody<'a> {
 impl<'a> PartialEq for MessageBody<'a> {
     fn eq(&self, other: &MessageBody) -> bool {
         match (self, other) {
-            (&MessageBody::None, &MessageBody::None) => true,
-            (&MessageBody::Slice(ref slice_a), &MessageBody::Slice(ref slice_b)) => slice_a == slice_b,
-            (&MessageBody::Reader(_), &MessageBody::Reader(_)) => true,
+            (&MessageBody::None, &MessageBody::None) | (&MessageBody::Reader(_), &MessageBody::Reader(_)) => true,
+            (&MessageBody::Slice(slice_a), &MessageBody::Slice(slice_b)) => slice_a == slice_b,
             _ => false
         }
     }
@@ -211,8 +207,8 @@ impl<'a> WriteTo for MessageBody<'a> {
                     }
                 })
             },
-            MessageBody::Slice(ref slice) => {
-                writer.write(&slice)
+            MessageBody::Slice(slice) => {
+                writer.write(slice)
             },
             _ => Ok(0),
         }
@@ -292,11 +288,11 @@ impl<'a> Chunk<'a> {
         if size > 0 {
             let s = size as usize;
             let consumed = (slice.len() - remainder.len()) + s + 2;
-            return Ok((Chunk::Slice(extensions, &remainder[..s]), consumed))
+            Ok((Chunk::Slice(extensions, &remainder[..s]), consumed))
         } else {
             let (trailers, remainder) = result(headers(remainder))?;
             let consumed = (slice.len() - remainder.len()) + 2;
-            return Ok((Chunk::Last(extensions, trailers), consumed))
+            Ok((Chunk::Last(extensions, trailers), consumed))
         }
     }
 }
@@ -327,17 +323,17 @@ mod tests {
 
     #[test]
     fn request_line_display() {
-        assert_eq!(format!("{}", RequestLine { method: "GET", request_target: "/where?q=now", version: HttpVersion { major: 1, minor: 1, } }), "GET /where?q=now HTTP/1.1\r\n");
+        assert_eq!(format!("{}", RequestLine { method: "GET", request_target: "/where?q=now", version: HttpVersion { major: 1, minor: 1 } }), "GET /where?q=now HTTP/1.1\r\n");
     }
 
     #[test]
     fn status_line_display() {
-        assert_eq!(format!("{}", StatusLine { version: HttpVersion { major: 1, minor: 1, }, code: 200, description: "OK" }), "HTTP/1.1 200 OK\r\n");
+        assert_eq!(format!("{}", StatusLine { version: HttpVersion { major: 1, minor: 1 }, code: 200, description: "OK" }), "HTTP/1.1 200 OK\r\n");
     }
 
     #[test]
     fn start_line_display() {
-        assert_eq!(format!("{}", StartLine::RequestLine(RequestLine { method: "GET", request_target: "/where?q=now", version: HttpVersion { major: 1, minor: 1, } })), "GET /where?q=now HTTP/1.1\r\n");
+        assert_eq!(format!("{}", StartLine::RequestLine(RequestLine { method: "GET", request_target: "/where?q=now", version: HttpVersion { major: 1, minor: 1 } })), "GET /where?q=now HTTP/1.1\r\n");
     }
 
     #[test]
@@ -354,7 +350,7 @@ mod tests {
     #[test]
     fn http_message_display() {
         assert_eq!(format!("{}", HttpMessage {
-            start_line: StartLine::StatusLine(StatusLine { version: HttpVersion { major: 1, minor: 1, }, code: 200, description: "OK" }),
+            start_line: StartLine::StatusLine(StatusLine { version: HttpVersion { major: 1, minor: 1 }, code: 200, description: "OK" }),
             headers: Headers(vec!(Header::new("Content-Type", "plain/text"), Header::new("Content-Length", "3"))),
             body: MessageBody::Slice(&b"abc"[..]),
         }), "HTTP/1.1 200 OK\r\nContent-Type: plain/text\r\nContent-Length: 3\r\n\r\nabc");

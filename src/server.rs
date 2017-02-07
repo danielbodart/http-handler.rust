@@ -79,6 +79,7 @@ impl Stream {
     }
 }
 
+#[derive(Default)]
 pub struct Client;
 
 impl HttpHandler for Client {
@@ -99,13 +100,6 @@ impl HttpHandler for Client {
         })
     }
 }
-
-impl Client {
-    pub fn new() -> Client {
-        Client
-    }
-}
-
 
 #[cfg(test)]
 #[allow(unused_variables)]

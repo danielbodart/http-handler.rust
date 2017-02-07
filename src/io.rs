@@ -147,7 +147,7 @@ impl ReadFrom for BufRead {
     }
 }
 
-/// Supports fragmented input unlike std::io::BufReader and is much simpler!
+/// Supports fragmented input unlike `std::io::BufReader` and is much simpler!
 #[derive(Debug)]
 pub struct BufferedRead<T> where T: Read + Sized {
     pub inner: T,

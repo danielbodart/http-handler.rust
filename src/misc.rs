@@ -55,7 +55,7 @@ pub fn is_adjacent<'a>(slice1: &'a [u8], slice2: &'a [u8]) -> bool {
     }
 }
 
-pub fn join_vec<'a>(vec: Vec<&'a [u8]>) -> Result<&'a [u8], SliceError> {
+pub fn join_vec(vec: Vec<&[u8]>) -> Result<&[u8], SliceError> {
     if vec.is_empty() {
         return Ok(Default::default());
     }
@@ -113,7 +113,7 @@ pub fn to_string(vec: Vec<&[u8]>) -> Result<String, string::FromUtf8Error> {
 
 pub fn to_cow_str(vec: Vec<&[u8]>) -> Result<Cow<str>, str::Utf8Error> {
     match reduce_vec(vec) {
-        Ok(slice) => str::from_utf8(slice).map(|s| Cow::from(s)),
+        Ok(slice) => str::from_utf8(slice).map(Cow::from),
         Err(vec) => match String::from_utf8(vec.concat()) {
             Ok(owned) => Ok(Cow::from(owned)),
             Err(err) => Err(err.utf8_error()),

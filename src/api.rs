@@ -75,7 +75,7 @@ impl<H> HttpHandler for LogHandler<H> where H: HttpHandler {
         where F: FnMut(&mut Response) -> Result<()> + Sized {
         let r = format!("{}", request);
         self.handler.handle(request, |response| {
-            print!("{}{}\n\n\n", r, response);
+            println!("{}{}\n\n", r, response);
             fun(response)
         })
     }
@@ -143,10 +143,10 @@ impl<'a> Message<'a> {
             let headers = head.headers;
             let (body, body_read) = MessageBody::read(&headers, remainder, reader);
 
-            return (match head.start_line {
+            (match head.start_line {
                 StartLine::RequestLine(line) => Message::Request(Request::new(line.method, line.request_target, headers, body)),
                 StartLine::StatusLine(line) => Message::Response(Response::new(line.code, line.description, headers, body)),
-            }, head_length + body_read);
+            }, head_length + body_read)
         })
     }
 }
@@ -364,7 +364,7 @@ impl<'a> Response<'a> {
     fn calculate_length(&self) -> Option<u64> {
         match self.entity {
             MessageBody::None => { Some(0) }
-            MessageBody::Slice(ref slice) => { Some(slice.len() as u64) }
+            MessageBody::Slice(slice) => { Some(slice.len() as u64) }
             _ => None
         }
     }

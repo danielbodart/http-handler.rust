@@ -167,7 +167,7 @@ named!(pub chunk <Chunk>, do_parse!(
 
 named!(pub chunk_head <(u64, ChunkExtensions)>, do_parse!(
     size:chunk_size >> extensions:chunk_ext >> crlf >>
-    ((size, extensions))
+    (size, extensions)
 ));
 
 // last-chunk     = 1*("0") [ chunk-ext ] CRLF
