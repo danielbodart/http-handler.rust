@@ -13,7 +13,7 @@ fn main() {
 //        assert_eq!(response.code, 200);
 //        Ok(())
 //    }).unwrap();
-        Server::new("0.0.0.0".to_owned(), 8080).handler(||Ok(FileHandler::new(std::env::current_dir()?))).unwrap();
+        Server::new("0.0.0.0", 8080).handler(||Ok(FileHandler::new(std::env::current_dir()?))).unwrap();
 }
 
 //fn port(env: &HashMap<String, String>) -> u16 {
