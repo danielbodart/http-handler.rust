@@ -231,26 +231,6 @@ impl<'a> Request<'a> {
     }
 }
 
-pub trait Req<'a> {
-    fn method(&mut self) -> &mut &'a str;
-    fn headers(&mut self) -> &mut Headers<'a>;
-
-    fn header_2<V>(mut self, name: &'a str, value: V) -> Self
-        where V: Into<Cow<'a, str>>, Self: Sized {
-        self.headers().replace(name, value);
-        self
-    }
-}
-
-impl<'a> Req<'a> for Request<'a> {
-    fn method(&mut self) -> &mut &'a str {
-        &mut self.method
-    }
-    fn headers(&mut self) -> &mut Headers<'a> {
-        &mut self.headers
-    }
-}
-
 impl<'a> From<HttpMessage<'a>> for Request<'a> {
     fn from(message: HttpMessage<'a>) -> Request<'a> {
         if let StartLine::RequestLine(line) = message.start_line {
