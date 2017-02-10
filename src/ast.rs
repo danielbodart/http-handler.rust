@@ -311,6 +311,39 @@ impl<'a> ChunkedBody<'a> {
     }
 }
 
+#[derive(PartialEq, Debug)]
+pub struct TransferParameter<'a> {
+    name: &'a str,
+    value: Option<Cow<'a, str>>,
+}
+
+impl<'a> TransferParameter<'a> {
+    pub fn new(name: &'a str, value: Option<Cow<'a, str>>) -> TransferParameter<'a>{
+        TransferParameter { name: name, value: value }
+    }
+}
+
+
+#[derive(PartialEq, Debug)]
+pub struct TransferExtension<'a> {
+    name: &'a str,
+    params: Vec<TransferParameter<'a>>,
+}
+
+impl<'a> TransferExtension<'a> {
+    pub fn new(name: &'a str, params: Vec<TransferParameter<'a>>) -> TransferExtension<'a>{
+        TransferExtension { name: name, params: params }
+    }
+}
+
+#[derive(PartialEq, Debug)]
+pub enum TransferCoding<'a>{
+    Chunked,
+    Compress,
+    Deflate,
+    Gzip,
+    Extension(TransferExtension<'a>),
+}
 
 #[cfg(test)]
 mod tests {
