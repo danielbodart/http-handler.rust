@@ -318,8 +318,9 @@ pub struct TransferParameter<'a> {
 }
 
 impl<'a> TransferParameter<'a> {
-    pub fn new(name: &'a str, value: Option<Cow<'a, str>>) -> TransferParameter<'a>{
-        TransferParameter { name: name, value: value }
+    pub fn new<V>(name: &'a str, value: Option<V>) -> TransferParameter<'a>
+    where V: Into<Cow<'a, str>>{
+        TransferParameter { name: name, value: value.map(|v|v.into()) }
     }
 }
 
