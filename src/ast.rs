@@ -325,24 +325,12 @@ impl<'a> TransferParameter<'a> {
 
 
 #[derive(PartialEq, Debug)]
-pub struct TransferExtension<'a> {
-    name: &'a str,
-    params: Vec<TransferParameter<'a>>,
-}
-
-impl<'a> TransferExtension<'a> {
-    pub fn new(name: &'a str, params: Vec<TransferParameter<'a>>) -> TransferExtension<'a>{
-        TransferExtension { name: name, params: params }
-    }
-}
-
-#[derive(PartialEq, Debug)]
 pub enum TransferCoding<'a>{
     Chunked,
     Compress,
     Deflate,
     Gzip,
-    Extension(TransferExtension<'a>),
+    Extension(&'a str, Vec<TransferParameter<'a>>),
 }
 
 #[cfg(test)]

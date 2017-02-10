@@ -193,9 +193,9 @@ named!(pub transfer_parameter <TransferParameter>, do_parse!(
 ));
 
 // transfer-extension = token *( OWS ";" OWS transfer-parameter )
-named!(pub transfer_extension <TransferExtension>, do_parse!(
+named!(pub transfer_extension <TransferCoding>, do_parse!(
     name:token >> params:many0!(do_parse!(ows >> char!(';') >> ows >> param: transfer_parameter >> (param))) >>
-    (TransferExtension::new(name, params))
+    (TransferCoding::Extension(name, params))
 ));
 
 // transfer-coding    = "chunked" / "compress" / "deflate" / "gzip" / transfer-extension
@@ -204,7 +204,7 @@ named!(pub transfer_coding <TransferCoding>, alt!(
     value!(TransferCoding::Compress, tag!("compress")) |
     value!(TransferCoding::Deflate, tag!("deflate")) |
     value!(TransferCoding::Gzip, tag!("gzip")) |
-    map!(transfer_extension, TransferCoding::Extension)));
+    transfer_extension));
 
 
 
@@ -373,6 +373,6 @@ mod tests {
         assert_eq!(super::transfer_coding(&b"compress"[..]), Done(&b""[..], TransferCoding::Compress));
         assert_eq!(super::transfer_coding(&b"deflate"[..]), Done(&b""[..], TransferCoding::Deflate));
         assert_eq!(super::transfer_coding(&b"gzip"[..]), Done(&b""[..], TransferCoding::Gzip));
-        assert_eq!(super::transfer_coding(&b"cat ; foo=bar"[..]), Done(&b""[..], TransferCoding::Extension(TransferExtension::new("cat", vec![TransferParameter::new("foo", Some(Cow::from("bar")))]))));
+        assert_eq!(super::transfer_coding(&b"cat ; foo=bar"[..]), Done(&b""[..], TransferCoding::Extension("cat", vec![TransferParameter::new("foo", Some(Cow::from("bar")))])));
     }
 }
