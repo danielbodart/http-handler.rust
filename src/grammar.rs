@@ -38,7 +38,7 @@ named!(pub ows, map_res!(many0!(alt!(space | htab)), join_vec));
 // RWS            = 1*( SP / HTAB ) ; required whitespace
 named!(pub rws, map_res!(many1!(alt!(space | htab)), join_vec));
 // BWS            = OWS ; "bad" whitespace
-// TODO alias BWS
+pub use self::ows as bws;
 
 // DQUOTE         =  %x22 ; " (Double Quote)
 named!(pub double_quote, tag!("\""));
@@ -60,10 +60,10 @@ named!(pub request_target <&str>, map_res!(is_not!(" "), str::from_utf8));
 named!(pub tchar, char_predicate!(or!(among("!#$%&'*+-.^_`|~"), is_digit, is_alphabetic)));
 
 ////token = 1*tchar
-named!(pub token, map_res!(many1!(tchar), join_vec));
+named!(pub token <&str>, map_res!(map_res!(many1!(tchar), join_vec), str::from_utf8));
 
 //method = token
-named!(pub method <&str>, map_res!(token, str::from_utf8));
+pub use self::token as method;
 
 //request-line   = method SP request-target SP HTTP-version CRLF
 named!(pub request_line <RequestLine>, do_parse!(
@@ -88,7 +88,7 @@ named!(pub status_line <StatusLine>, do_parse!(
 named!(pub start_line <StartLine>, alt!(map!(request_line, StartLine::RequestLine) | map!(status_line, StartLine::StatusLine)));
 
 // field-name     = token
-named!(pub field_name <&str>, map_res!(token, str::from_utf8));
+pub use self::token as field_name;
 
 // field-vchar    = VCHAR / obs-text
 named!(pub field_vchar, alt!(vchar | obs_text));
@@ -147,14 +147,14 @@ named!(pub http_message <HttpMessage> , do_parse!(
 named!(pub chunk_size <u64>, map_res!(map_res!(map_res!(many1!(hex_digit), join_vec), str::from_utf8), parse_hex));
 
 // chunk-ext-name = token
-named!(pub chunk_ext_name <&str>, map_res!(token, str::from_utf8));
+pub use self::token as chunk_ext_name;
 
 // chunk-ext-val  = token / quoted-string
-named!(pub chunk_ext_value <Cow<str>>, alt!(map!(map_res!(token, str::from_utf8), Cow::from) | quoted_string));
+named!(pub chunk_ext_value <Cow<str>>, alt!(map!(token, Cow::from) | quoted_string));
 
 //  chunk-ext      = *( BWS  ";" BWS chunk-ext-name [ BWS  "=" BWS chunk-ext-val ] )
 named!(pub chunk_ext <ChunkExtensions>, map!(many0!(do_parse!(
-    ows >> char!(';') >> ows >> name:chunk_ext_name >> value:opt!(complete!(preceded!(delimited!(ows, char!('='), ows), chunk_ext_value))) >>
+    bws >> char!(';') >> bws >> name:chunk_ext_name >> value:opt!(complete!(preceded!(delimited!(bws, char!('='), bws), chunk_ext_value))) >>
     (name, value)
 )), ChunkExtensions));
 
@@ -177,13 +177,16 @@ named!(pub last_chunk <ChunkExtensions>, do_parse!(
 ));
 
 // trailer-part   = *( header-field CRLF )
-// TODO: Alias headers
+pub use self::headers as trailer_part;
 
 // chunked-body   = *chunk last-chunk trailer-part CRLF
 named!(pub chunked_body <ChunkedBody>, do_parse!(
-    chunks:many0!(chunk) >> last:last_chunk >> trailers:headers >> crlf >>
+    chunks:many0!(chunk) >> last:last_chunk >> trailers:trailer_part >> crlf >>
     (ChunkedBody::new(chunks, last, trailers))
 ));
+
+
+// transfer-parameter = token BWS "=" BWS ( token / quoted-string )
 
 
 #[cfg(test)]
@@ -217,7 +220,7 @@ mod tests {
 
     #[test]
     fn token() {
-        assert_eq!(super::token(&b"abc"[..]), Done(&b""[..], &b"abc"[..]));
+        assert_eq!(super::token(&b"abc"[..]), Done(&b""[..], "abc"));
     }
 
     #[test]
