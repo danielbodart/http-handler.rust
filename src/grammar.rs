@@ -207,7 +207,9 @@ named!(pub transfer_coding <TransferCoding>, alt!(
     transfer_extension
 ));
 
-
+//  Transfer-Encoding = 1#transfer-coding
+//  #rule: 1#element => element *( OWS "," OWS element )
+named!(pub transfer_encoding <Vec<TransferCoding>>, separated_nonempty_list!(delimited!(ows, char!(','), ows), transfer_coding));
 
 #[cfg(test)]
 mod tests {
@@ -375,5 +377,11 @@ mod tests {
         assert_eq!(super::transfer_coding(&b"deflate"[..]), Done(&b""[..], TransferCoding::Deflate));
         assert_eq!(super::transfer_coding(&b"gzip"[..]), Done(&b""[..], TransferCoding::Gzip));
         assert_eq!(super::transfer_coding(&b"cat ; foo=bar"[..]), Done(&b""[..], TransferCoding::Extension("cat", vec![TransferParameter::new("foo", Some("bar"))])));
+    }
+
+    #[test]
+    fn transfer_encoding() {
+        assert_eq!(super::transfer_encoding(&b"gzip, chunked"[..]), Done(&b""[..], vec![TransferCoding::Gzip, TransferCoding::Chunked]));
+        assert_eq!(super::transfer_encoding(&b"chunked"[..]), Done(&b""[..], vec![TransferCoding::Chunked]));
     }
 }
