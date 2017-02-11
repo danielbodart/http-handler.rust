@@ -6,18 +6,20 @@ use std::net::{TcpStream, TcpListener};
 use std::{thread, str};
 use std::sync::Arc;
 use std::marker::{Send};
+use std::borrow::{Cow, Borrow};
 use api::*;
 use io::*;
 
-pub struct Server {
-    host: String,
+pub struct Server<'a> {
+    host: Cow<'a, str>,
     port: u16,
 }
 
-impl Server {
-    pub fn new(host: String, port: u16) -> Server {
+impl<'a> Server<'a> {
+    pub fn new<H>(host: H, port: u16) -> Server<'a>
+        where H: Into<Cow<'a, str>> {
         Server {
-            host: host,
+            host: host.into(),
             port: port,
         }
     }
@@ -52,7 +54,7 @@ impl Server {
     }
 
     fn listen(&mut self) -> Result<TcpListener> {
-        let authority = (self.host.as_str(), self.port);
+        let authority = (self.host.borrow(), self.port);
         let listener: TcpListener = TcpListener::bind(authority)?;
         self.port = listener.local_addr()?.port();
         println!("listening on http://{}:{}/", self.host, self.port);
@@ -69,7 +71,6 @@ impl Stream {
         unit(buffer.read_from(|slice| {
             let (mut message, count) = Message::read(slice, reader)?;
             fun(&mut message)?;
-            message.drain()?;
             Ok(count)
         }))
     }
@@ -80,6 +81,7 @@ impl Stream {
     }
 }
 
+#[derive(Default)]
 pub struct Client;
 
 impl HttpHandler for Client {
@@ -100,13 +102,6 @@ impl HttpHandler for Client {
         })
     }
 }
-
-impl Client {
-    pub fn new() -> Client {
-        Client
-    }
-}
-
 
 #[cfg(test)]
 #[allow(unused_variables)]

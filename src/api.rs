@@ -1,11 +1,14 @@
 use std::path::{Path};
 use std::fs::{File, Metadata, canonicalize};
-use std::io::{Read, Write, Result};
+use std::io::{BufRead, Read, Write, Result};
+use std::cmp::min;
+use std::borrow::Cow;
 use std::fmt;
 use regex::Regex;
 use ast::*;
 use grammar::*;
-use parser::result;
+use parser::*;
+use io::*;
 
 
 pub trait HttpHandler {
@@ -72,7 +75,7 @@ impl<H> HttpHandler for LogHandler<H> where H: HttpHandler {
         where F: FnMut(&mut Response) -> Result<()> + Sized {
         let r = format!("{}", request);
         self.handler.handle(request, |response| {
-            print!("{}{}\n\n\n", r, response);
+            println!("{}{}\n\n", r, response);
             fun(response)
         })
     }
@@ -124,7 +127,7 @@ impl<'a> fmt::Display for Uri<'a> {
 }
 
 #[derive(PartialEq, Debug)]
-pub enum Message<'a>{
+pub enum Message<'a> {
     Request(Request<'a>),
     Response(Response<'a>),
 }
@@ -140,18 +143,11 @@ impl<'a> Message<'a> {
             let headers = head.headers;
             let (body, body_read) = MessageBody::read(&headers, remainder, reader);
 
-            return (match head.start_line {
+            (match head.start_line {
                 StartLine::RequestLine(line) => Message::Request(Request::new(line.method, line.request_target, headers, body)),
                 StartLine::StatusLine(line) => Message::Response(Response::new(line.code, line.description, headers, body)),
-            }, head_length + body_read);
+            }, head_length + body_read)
         })
-    }
-
-    pub fn drain(self) -> Result<u64> {
-        match self {
-            Message::Request(request) => request.entity.drain(),
-            Message::Response(response) => response.entity.drain(),
-        }
     }
 }
 
@@ -214,12 +210,13 @@ impl<'a> Request<'a> {
         Request::request("OPTION", url)
     }
 
-    pub fn method(mut self, method: &'a str) -> Request<'a> {
+    pub fn method(mut self, method: &'a str) -> Self {
         self.method = method;
         self
     }
 
-    pub fn header(mut self, name: &'a str, value: String) -> Request<'a> {
+    pub fn header<V>(mut self, name: &'a str, value: V) -> Self
+        where V: Into<Cow<'a, str>> {
         self.headers.replace(name, value);
         self
     }
@@ -228,7 +225,7 @@ impl<'a> Request<'a> {
         self.headers.get(name)
     }
 
-    pub fn remove_header(mut self, name: &str) -> Request<'a> {
+    pub fn remove_header(mut self, name: &str) -> Self {
         self.headers.remove(name);
         self
     }
@@ -347,7 +344,7 @@ impl<'a> Response<'a> {
     fn calculate_length(&self) -> Option<u64> {
         match self.entity {
             MessageBody::None => { Some(0) }
-            MessageBody::Slice(ref slice) => { Some(slice.len() as u64) }
+            MessageBody::Slice(slice) => { Some(slice.len() as u64) }
             _ => None
         }
     }
@@ -389,9 +386,97 @@ impl<'a> WriteTo for Response<'a> {
     }
 }
 
+pub struct ChunkStream<R> where R: BufRead + Sized {
+    pub read: R,
+    pub state: ChunkStreamState,
+}
+
+#[derive(PartialEq, Debug)]
+pub enum ChunkStreamState {
+    NotStarted,
+    Consumed(usize),
+    Last(usize),
+    Finished,
+}
+
+impl<R> ChunkStream<R> where R: BufRead + Sized {
+    pub fn new(read: R) -> ChunkStream<R> {
+        ChunkStream { read: read, state: ChunkStreamState::NotStarted }
+    }
+
+    pub fn update_state(&mut self) {
+        match self.state {
+            ChunkStreamState::Last(consumed) => {
+                self.read.consume(consumed);
+                self.state = ChunkStreamState::Finished;
+            },
+            ChunkStreamState::Consumed(consumed) => {
+                self.read.consume(consumed)
+            },
+            _ => {}
+        }
+    }
+}
+
+impl<'a, R> Drop for ChunkStream<R> where R: BufRead + Sized {
+    fn drop(&mut self) {
+        while let Some(Ok(_)) = self.next() {}
+    }
+}
+
+impl<'a, R> Streamer<'a> for ChunkStream<R> where R: BufRead + Sized {
+    type Item = Result<Chunk<'a>>;
+
+    fn next(&'a mut self) -> Option<Self::Item> {
+        self.update_state();
+        if self.state == ChunkStreamState::Finished {
+            return None;
+        }
+
+        loop {
+            let buffer = self.read.fill_buf().unwrap();
+            if buffer.len() == 0 {
+                self.state = ChunkStreamState::Finished;
+                return None;
+            }
+
+            match Chunk::read(buffer) {
+                Ok((last @ Chunk::Last(..), consumed)) => {
+                    self.state = ChunkStreamState::Last(consumed);
+                    return Some(Ok(last))
+                },
+                Ok((chunk, consumed)) => {
+                    self.state = ChunkStreamState::Consumed(consumed);
+                    return Some(Ok(chunk))
+                },
+                Err(e) => return Some(Err(e))
+            };
+        }
+    }
+}
+
+impl<'a, R> Read for ChunkStream<R> where R: BufRead + Sized {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+        match self.next() {
+            None => Ok(0),
+            Some(Ok(Chunk::Slice(_, slice))) => {
+                // TODO: handle when buf is too small
+                let size = min(slice.len(), buf.len());
+                buf[..size].copy_from_slice(slice);
+                Ok(size)
+            },
+            Some(Ok(Chunk::Last(..))) => {
+                Ok(0)
+            },
+            Some(Err(e)) => Err(e),
+        }
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
-    use super::{Request, Uri};
+    use super::*;
 
     #[test]
     fn can_parse_uri() {
@@ -433,12 +518,75 @@ mod tests {
 
     #[test]
     fn can_pattern_match_a_request() {
-        let request = Request::get("/some/path").header("Content-Type", "text/plain".to_string());
+        let request = Request::get("/some/path").header("Content-Type", "text/plain");
         match request {
             Request { method: "GET", uri: Uri { path: "/some/path", .. }, ref headers, .. } if headers.get("Content-Type") == Some("text/plain") => {},
             _ => {
                 panic!("Should have matched");
             }
+        }
+    }
+
+    #[test]
+    fn can_parse_chunk_stream() {
+        use std::io::BufRead;
+        use io::{BufferedRead, Streamer};
+        use ast::{Chunk, ChunkExtensions, Headers};
+
+        let data = &b"4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n0\r\n\r\nGET /new/request HTTP/1.1\r\n"[..];
+        let buffered = BufferedRead::new(data);
+        let mut stream = ChunkStream::new(buffered);
+        if let Some(Ok(chunk)) = stream.next() {
+            assert_eq!(chunk, Chunk::Slice(ChunkExtensions(vec![]), &b"Wiki"[..]));
+        }
+        if let Some(Ok(chunk)) = stream.next() {
+            assert_eq!(chunk, Chunk::Slice(ChunkExtensions(vec![]), &b"pedia"[..]));
+        }
+        if let Some(Ok(chunk)) = stream.next() {
+            assert_eq!(chunk, Chunk::Slice(ChunkExtensions(vec![]), &b" in\r\n\r\nchunks."[..]));
+        }
+        if let Some(Ok(chunk)) = stream.next() {
+            assert_eq!(chunk, Chunk::Last(ChunkExtensions(vec![]), Headers::new()));
+        }
+        assert!(stream.next().is_none());
+
+        let remainder = stream.read.fill_buf().unwrap();
+        assert_eq!(remainder, &b"GET /new/request HTTP/1.1\r\n"[..]);
+    }
+
+    #[test]
+    fn can_read_chunked_stream() {
+        use std::io::{BufRead, Read};
+        use io::{BufferedRead};
+
+        let data = &b"4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n0\r\n\r\nGET /new/request HTTP/1.1\r\n"[..];
+        let mut producer = BufferedRead::new(data);
+        {
+            let mut consumer = BufferedRead::new(ChunkStream::new(&mut producer));
+
+            let mut result = String::new();
+            consumer.read_to_string(&mut result).unwrap();
+            assert_eq!(result, "Wikipedia in\r\n\r\nchunks.".to_owned());
+        }
+        {
+            let remainder = producer.fill_buf().unwrap();
+            assert_eq!(remainder, &b"GET /new/request HTTP/1.1\r\n"[..]);
+        }
+    }
+
+    #[test]
+    fn chunked_stream_always_reads_to_end() {
+        use std::io::{BufRead};
+        use io::{BufferedRead};
+
+        let data = &b"4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n0\r\n\r\nGET /new/request HTTP/1.1\r\n"[..];
+        let mut producer = BufferedRead::new(data);
+        {
+            ChunkStream::new(&mut producer);
+        }
+        {
+            let remainder = producer.fill_buf().unwrap();
+            assert_eq!(remainder, &b"GET /new/request HTTP/1.1\r\n"[..]);
         }
     }
 }

@@ -165,11 +165,11 @@ impl ReadFrom for BufRead {
     }
 }
 
-/// Supports fragmented input unlike std::io::BufReader and is much simpler!
+/// Supports fragmented input unlike `std::io::BufReader` and is much simpler!
 #[derive(Debug)]
 pub struct BufferedRead<T> where T: Read + Sized {
-    inner: T,
-    buffer: Buffer,
+    pub inner: T,
+    pub buffer: Buffer,
 }
 
 impl<T> From<T> for BufferedRead<T> where T: Read + Sized {
@@ -290,6 +290,12 @@ impl<'a> Read for Fragmented<'a> {
         self.count += 1;
         Ok(length)
     }
+}
+
+pub trait Streamer<'a> {
+    type Item: 'a;
+
+    fn next(&'a mut self) -> Option<Self::Item>;
 }
 
 

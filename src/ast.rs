@@ -2,6 +2,10 @@ use std::ascii::AsciiExt;
 use std::{fmt, str, usize};
 use std::io::{Read, Write, Result, copy, sink};
 use api::{WriteTo};
+use std::borrow::{Cow, Borrow};
+use parser::result;
+use nom::IResult;
+use io::SimpleError;
 
 #[derive(PartialEq, Debug)]
 pub struct HttpVersion {
@@ -57,12 +61,35 @@ impl<'a> fmt::Display for StartLine<'a> {
 }
 
 #[derive(PartialEq, Debug)]
-pub struct Headers<'a> (pub Vec<(&'a str, String)>);
+pub struct Header<'a> {
+    pub name: Cow<'a, str>,
+    pub value: Cow<'a, str>,
+}
+
+impl<'a> Header<'a> {
+    pub fn new<N, V>(name: N, value: V) -> Header<'a>
+        where N: Into<Cow<'a, str>>,
+              V: Into<Cow<'a, str>> {
+        Header { name: name.into(), value: value.into() }
+    }
+
+    pub fn name(&self) -> &str {
+        self.name.borrow()
+    }
+
+    pub fn value(&self) -> &str {
+        self.value.borrow()
+    }
+}
+
+#[derive(PartialEq, Debug)]
+pub struct Headers<'a> (pub Vec<Header<'a>>);
+
 
 impl<'a> fmt::Display for Headers<'a> {
     fn fmt(&self, format: &mut fmt::Formatter) -> fmt::Result {
-        for &(name, ref value) in &self.0[0..self.0.len()] {
-            write!(format, "{}: {}\r\n", name, value)?;
+        for header in &self.0[0..self.0.len()] {
+            write!(format, "{}: {}\r\n", header.name(), header.value())?;
         }
         Ok(())
     }
@@ -74,13 +101,42 @@ impl<'a> Headers<'a> {
     }
 
     pub fn get(&'a self, name: &str) -> Option<&'a str> {
-        self.pairs().into_iter()
-            .find(|&&(key, _)| name.eq_ignore_ascii_case(key))
-            .map(|&(_, ref value)| value.as_str())
+        (&self.0).into_iter().
+            find(|header| name.eq_ignore_ascii_case(header.name())).
+            map(|header| header.value())
     }
 
-    fn pairs(&'a self) -> &Vec<(&'a str, String)> {
-        &self.0
+    pub fn headers(&'a self, name: &str) -> Vec<&'a str> {
+        (&self.0).into_iter().
+            filter(|header| name.eq_ignore_ascii_case(header.name())).
+            map(|header| header.value()).
+            collect()
+    }
+
+    pub fn parse<F, T>(&'a self, name: &str, fun: F) -> Result<Vec<T>>
+        where T: 'a, F: Fn(&'a str) -> Result<Vec<T>> {
+        let mut result = Vec::new();
+        for header in self.headers(name) {
+            result.extend(fun(header)?);
+        }
+        Ok(result)
+    }
+
+    pub fn parse_nom<T>(&'a self, name: &str, fun: fn(&'a[u8]) -> IResult<&'a[u8], Vec<T>>) -> Result<Vec<T>>
+        where T: 'a {
+        self.parse(name, |s| {
+            let (encodings, remainder) = result(fun(s.as_bytes()))?;
+            if !remainder.is_empty() {
+                return Err(SimpleError::error(format!("Invalid header '{}' has remainder '{}'", name, str::from_utf8(remainder).unwrap())))
+            }
+            Ok(encodings)
+        })
+    }
+
+    pub fn transfer_encoding(&'a self) -> Vec<TransferCoding<'a>>{
+        use grammar::transfer_encoding;
+
+        self.parse_nom("Transfer-Encoding", transfer_encoding).unwrap_or(Vec::new())
     }
 
     pub fn content_length(&self) -> Option<u64> {
@@ -88,14 +144,15 @@ impl<'a> Headers<'a> {
             and_then(|value| value.parse().ok())
     }
 
-    pub fn replace(&mut self, name: &'a str, value: String) -> &mut Headers<'a> {
-        self.0.retain(|&(key, _)| !name.eq_ignore_ascii_case(key));
-        self.0.push((name, value));
+    pub fn replace<V>(&mut self, name: &'a str, value: V) -> &mut Headers<'a>
+        where V: Into<Cow<'a, str>> {
+        self.0.retain(|header| !name.eq_ignore_ascii_case(header.name()));
+        self.0.push(Header::new(name, value));
         self
     }
 
     pub fn remove(&mut self, name: &str) -> &mut Headers<'a> {
-        self.0.retain(|&(key, _)| !name.eq_ignore_ascii_case(key));
+        self.0.retain(|header| !name.eq_ignore_ascii_case(header.name()));
         self
     }
 }
@@ -128,7 +185,7 @@ impl<'a> MessageBody<'a> {
             MessageBody::Reader(_) => {
                 format.write_str("streaming")
             },
-            MessageBody::Slice(ref slice) => {
+            MessageBody::Slice(slice) => {
                 if let Ok(result) = str::from_utf8(slice) {
                     format.write_str(result)
                 } else {
@@ -138,13 +195,12 @@ impl<'a> MessageBody<'a> {
             _ => Ok(()),
         }
     }
+}
 
-    pub fn drain(self) -> Result<u64> {
-        match self {
-            MessageBody::Reader(mut reader) => {
-                copy(&mut reader, &mut sink())
-            },
-            _ => Ok(0),
+impl<'a> Drop for MessageBody<'a> {
+    fn drop(&mut self) {
+        if let MessageBody::Reader(ref mut reader) = *self {
+            copy(reader, &mut sink()).expect("should be able to copy");
         }
     }
 }
@@ -152,9 +208,8 @@ impl<'a> MessageBody<'a> {
 impl<'a> PartialEq for MessageBody<'a> {
     fn eq(&self, other: &MessageBody) -> bool {
         match (self, other) {
-            (&MessageBody::None, &MessageBody::None) => true,
-            (&MessageBody::Slice(ref slice_a), &MessageBody::Slice(ref slice_b)) => slice_a == slice_b,
-            (&MessageBody::Reader(_), &MessageBody::Reader(_)) => true,
+            (&MessageBody::None, &MessageBody::None) | (&MessageBody::Reader(_), &MessageBody::Reader(_)) => true,
+            (&MessageBody::Slice(slice_a), &MessageBody::Slice(slice_b)) => slice_a == slice_b,
             _ => false
         }
     }
@@ -184,8 +239,8 @@ impl<'a> WriteTo for MessageBody<'a> {
                     }
                 })
             },
-            MessageBody::Slice(ref slice) => {
-                writer.write(&slice)
+            MessageBody::Slice(slice) => {
+                writer.write(slice)
             },
             _ => Ok(0),
         }
@@ -235,7 +290,7 @@ impl<'a> WriteTo for HttpMessage<'a> {
 }
 
 #[derive(PartialEq, Debug)]
-pub struct ChunkExtensions<'a> (pub Vec<(&'a str, Option<String>)>);
+pub struct ChunkExtensions<'a> (pub Vec<(&'a str, Option<Cow<'a, str>>)>);
 
 impl<'a> fmt::Display for ChunkExtensions<'a> {
     fn fmt(&self, format: &mut fmt::Formatter) -> fmt::Result {
@@ -253,25 +308,63 @@ impl<'a> fmt::Display for ChunkExtensions<'a> {
 #[derive(PartialEq, Debug)]
 pub enum Chunk<'a> {
     Slice(ChunkExtensions<'a>, &'a [u8]),
-    Last(ChunkExtensions<'a>),
+    Last(ChunkExtensions<'a>, Headers<'a>),
+}
+
+impl<'a> Chunk<'a> {
+    pub fn read(slice: &[u8]) -> Result<(Chunk, usize)> {
+        use grammar::*;
+        use parser::result;
+
+        let ((size, extensions), remainder) = result(chunk_head(slice))?;
+        if size > 0 {
+            let s = size as usize;
+            let consumed = (slice.len() - remainder.len()) + s + 2;
+            Ok((Chunk::Slice(extensions, &remainder[..s]), consumed))
+        } else {
+            let (trailers, remainder) = result(headers(remainder))?;
+            let consumed = (slice.len() - remainder.len()) + 2;
+            Ok((Chunk::Last(extensions, trailers), consumed))
+        }
+    }
 }
 
 #[derive(PartialEq, Debug)]
 pub struct ChunkedBody<'a> {
     chunks: Vec<Chunk<'a>>,
-    trailers: Headers<'a>
 }
 
 impl<'a> ChunkedBody<'a> {
-    pub fn new(mut chunks: Vec<Chunk<'a>>, last: Chunk<'a>, trailers: Headers<'a>) -> ChunkedBody<'a> {
-        chunks.push(last);
+    pub fn new(mut chunks: Vec<Chunk<'a>>, last: ChunkExtensions<'a>, trailers: Headers<'a>) -> ChunkedBody<'a> {
+        chunks.push(Chunk::Last(last, trailers));
         ChunkedBody {
             chunks: chunks,
-            trailers: trailers,
         }
     }
 }
 
+#[derive(PartialEq, Debug)]
+pub struct TransferParameter<'a> {
+    name: &'a str,
+    value: Option<Cow<'a, str>>,
+}
+
+impl<'a> TransferParameter<'a> {
+    pub fn new<V>(name: &'a str, value: Option<V>) -> TransferParameter<'a>
+        where V: Into<Cow<'a, str>> {
+        TransferParameter { name: name, value: value.map(|v| v.into()) }
+    }
+}
+
+
+#[derive(PartialEq, Debug)]
+pub enum TransferCoding<'a> {
+    Chunked,
+    Compress,
+    Deflate,
+    Gzip,
+    Extension(&'a str, Vec<TransferParameter<'a>>),
+}
 
 #[cfg(test)]
 mod tests {
@@ -284,22 +377,22 @@ mod tests {
 
     #[test]
     fn request_line_display() {
-        assert_eq!(format!("{}", RequestLine { method: "GET", request_target: "/where?q=now", version: HttpVersion { major: 1, minor: 1, } }), "GET /where?q=now HTTP/1.1\r\n");
+        assert_eq!(format!("{}", RequestLine { method: "GET", request_target: "/where?q=now", version: HttpVersion { major: 1, minor: 1 } }), "GET /where?q=now HTTP/1.1\r\n");
     }
 
     #[test]
     fn status_line_display() {
-        assert_eq!(format!("{}", StatusLine { version: HttpVersion { major: 1, minor: 1, }, code: 200, description: "OK" }), "HTTP/1.1 200 OK\r\n");
+        assert_eq!(format!("{}", StatusLine { version: HttpVersion { major: 1, minor: 1 }, code: 200, description: "OK" }), "HTTP/1.1 200 OK\r\n");
     }
 
     #[test]
     fn start_line_display() {
-        assert_eq!(format!("{}", StartLine::RequestLine(RequestLine { method: "GET", request_target: "/where?q=now", version: HttpVersion { major: 1, minor: 1, } })), "GET /where?q=now HTTP/1.1\r\n");
+        assert_eq!(format!("{}", StartLine::RequestLine(RequestLine { method: "GET", request_target: "/where?q=now", version: HttpVersion { major: 1, minor: 1 } })), "GET /where?q=now HTTP/1.1\r\n");
     }
 
     #[test]
     fn headers_display() {
-        assert_eq!(format!("{}", Headers(vec!(("Content-Type", "plain/text".to_string()), ("Content-Length", "3".to_string())))), "Content-Type: plain/text\r\nContent-Length: 3\r\n");
+        assert_eq!(format!("{}", Headers(vec!(Header::new("Content-Type", "plain/text"), Header::new("Content-Length", "3")))), "Content-Type: plain/text\r\nContent-Length: 3\r\n");
     }
 
     #[test]
@@ -311,9 +404,22 @@ mod tests {
     #[test]
     fn http_message_display() {
         assert_eq!(format!("{}", HttpMessage {
-            start_line: StartLine::StatusLine(StatusLine { version: HttpVersion { major: 1, minor: 1, }, code: 200, description: "OK" }),
-            headers: Headers(vec!(("Content-Type", "plain/text".to_string()), ("Content-Length", "3".to_string()))),
+            start_line: StartLine::StatusLine(StatusLine { version: HttpVersion { major: 1, minor: 1 }, code: 200, description: "OK" }),
+            headers: Headers(vec!(Header::new("Content-Type", "plain/text"), Header::new("Content-Length", "3"))),
             body: MessageBody::Slice(&b"abc"[..]),
         }), "HTTP/1.1 200 OK\r\nContent-Type: plain/text\r\nContent-Length: 3\r\n\r\nabc");
+    }
+
+    #[test]
+    fn can_parse_transfer_encoding() {
+        {
+            let headers = Headers(vec!(Header::new("Transfer-Encoding", "gzip, chunked"), Header::new("Content-Type", "plain/text")));
+            assert_eq!(headers.transfer_encoding(), vec![TransferCoding::Gzip, TransferCoding::Chunked])
+        }
+
+        {
+            let headers = Headers(vec!(Header::new("Transfer-Encoding", "gzip"), Header::new("Content-Type", "plain/text"), Header::new("Transfer-Encoding", "chunked")));
+            assert_eq!(headers.transfer_encoding(), vec![TransferCoding::Gzip, TransferCoding::Chunked])
+        }
     }
 }
