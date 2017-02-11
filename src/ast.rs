@@ -3,6 +3,9 @@ use std::{fmt, str, usize};
 use std::io::{Read, Write, Result, copy, sink};
 use api::{WriteTo};
 use std::borrow::{Cow, Borrow};
+use parser::result;
+use nom::IResult;
+use io::SimpleError;
 
 #[derive(PartialEq, Debug)]
 pub struct HttpVersion {
@@ -98,13 +101,42 @@ impl<'a> Headers<'a> {
     }
 
     pub fn get(&'a self, name: &str) -> Option<&'a str> {
-        self.pairs().into_iter()
-            .find(|header| name.eq_ignore_ascii_case(header.name()))
-            .map(|header| header.value())
+        (&self.0).into_iter().
+            find(|header| name.eq_ignore_ascii_case(header.name())).
+            map(|header| header.value())
     }
 
-    fn pairs(&'a self) -> &Vec<Header<'a>> {
-        &self.0
+    pub fn headers(&'a self, name: &str) -> Vec<&'a str> {
+        (&self.0).into_iter().
+            filter(|header| name.eq_ignore_ascii_case(header.name())).
+            map(|header| header.value()).
+            collect()
+    }
+
+    pub fn parse<F, T>(&'a self, name: &str, fun: F) -> Result<Vec<T>>
+        where T: 'a, F: Fn(&'a str) -> Result<Vec<T>> {
+        let mut result = Vec::new();
+        for header in self.headers(name) {
+            result.extend(fun(header)?);
+        }
+        Ok(result)
+    }
+
+    pub fn parse_nom<T>(&'a self, name: &str, fun: fn(&'a[u8]) -> IResult<&'a[u8], Vec<T>>) -> Result<Vec<T>>
+        where T: 'a {
+        self.parse(name, |s| {
+            let (encodings, remainder) = result(fun(s.as_bytes()))?;
+            if !remainder.is_empty() {
+                return Err(SimpleError::error(format!("Invalid header '{}' has remainder '{}'", name, str::from_utf8(remainder).unwrap())))
+            }
+            Ok(encodings)
+        })
+    }
+
+    pub fn transfer_encoding(&'a self) -> Vec<TransferCoding<'a>>{
+        use grammar::transfer_encoding;
+
+        self.parse_nom("Transfer-Encoding", transfer_encoding).unwrap_or(Vec::new())
     }
 
     pub fn content_length(&self) -> Option<u64> {
@@ -319,14 +351,14 @@ pub struct TransferParameter<'a> {
 
 impl<'a> TransferParameter<'a> {
     pub fn new<V>(name: &'a str, value: Option<V>) -> TransferParameter<'a>
-    where V: Into<Cow<'a, str>>{
-        TransferParameter { name: name, value: value.map(|v|v.into()) }
+        where V: Into<Cow<'a, str>> {
+        TransferParameter { name: name, value: value.map(|v| v.into()) }
     }
 }
 
 
 #[derive(PartialEq, Debug)]
-pub enum TransferCoding<'a>{
+pub enum TransferCoding<'a> {
     Chunked,
     Compress,
     Deflate,
@@ -376,5 +408,18 @@ mod tests {
             headers: Headers(vec!(Header::new("Content-Type", "plain/text"), Header::new("Content-Length", "3"))),
             body: MessageBody::Slice(&b"abc"[..]),
         }), "HTTP/1.1 200 OK\r\nContent-Type: plain/text\r\nContent-Length: 3\r\n\r\nabc");
+    }
+
+    #[test]
+    fn can_parse_transfer_encoding() {
+        {
+            let headers = Headers(vec!(Header::new("Transfer-Encoding", "gzip, chunked"), Header::new("Content-Type", "plain/text")));
+            assert_eq!(headers.transfer_encoding(), vec![TransferCoding::Gzip, TransferCoding::Chunked])
+        }
+
+        {
+            let headers = Headers(vec!(Header::new("Transfer-Encoding", "gzip"), Header::new("Content-Type", "plain/text"), Header::new("Transfer-Encoding", "chunked")));
+            assert_eq!(headers.transfer_encoding(), vec![TransferCoding::Gzip, TransferCoding::Chunked])
+        }
     }
 }
