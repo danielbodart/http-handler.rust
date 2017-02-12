@@ -1,0 +1,14 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="All Tests" type="CargoCommandRunConfiguration" factoryName="Cargo Command" show_console_on_std_err="false" show_console_on_std_out="false">
+    <option name="additionalArguments" value="--package http_handler --lib" />
+    <option name="command" value="test" />
+    <option name="environmentVariables">
+      <map>
+        <entry key="RUST_BACKTRACE" value="1" />
+      </map>
+    </option>
+    <option name="printBacktrace" value="false" />
+    <module name="http-handler.rust" />
+    <method />
+  </configuration>
+</component>

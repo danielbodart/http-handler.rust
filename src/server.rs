@@ -67,7 +67,7 @@ pub struct Stream;
 impl Stream {
     fn read<R, F>(reader: &mut R, buffer: &mut Buffer<Vec<u8>>, mut fun: F) -> Result<()>
         where R: Read + Sized, F: FnMut(&mut Message) -> Result<()> {
-        consume(buffer.from(reader))?;
+        consume(buffer.fill(reader))?;
         unit(buffer.read_from(|slice| {
             let (mut message, count) = Message::read(slice, reader)?;
             fun(&mut message)?;

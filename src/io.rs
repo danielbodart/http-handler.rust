@@ -14,7 +14,7 @@ pub trait WriteInto {
 }
 
 #[derive(Debug)]
-pub struct Buffer<T: AsRef<[u8]>> {
+pub struct Buffer<T> {
     value: T,
     pub read_position: usize,
     pub write_position: usize,
@@ -43,9 +43,19 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> Buffer<T>{
         self.write_position += value;
     }
 
-    pub fn from<R>(&mut self, read: &mut R) -> Result<usize>
+    pub fn fill<R>(&mut self, read: &mut R) -> Result<usize>
         where R: Read + Sized {
         self.write_into(|slice| read.read(slice))
+    }
+}
+
+impl<T: AsRef<[u8]>> From<T> for Buffer<T>{
+    fn from(value: T) -> Self {
+        Buffer {
+            value: value,
+            read_position: 0,
+            write_position: 0,
+        }
     }
 }
 
@@ -53,15 +63,7 @@ impl Buffer<Vec<u8>> {
     pub fn with_capacity(capacity: usize) -> Buffer<Vec<u8>> {
         let mut value = Vec::with_capacity(capacity);
         unsafe { value.set_len(capacity) }
-        Buffer {
-            value: value,
-            read_position: 0,
-            write_position: 0,
-        }
-    }
-
-    pub fn capacity(&self) -> usize {
-        self.value.capacity()
+        Buffer::from(value)
     }
 }
 
@@ -167,7 +169,7 @@ impl<T> BufferedRead<T> where T: Read + Sized {
     }
 
     pub fn fill(&mut self) -> Result<usize> {
-        self.buffer.from(&mut self.inner)
+        self.buffer.fill(&mut self.inner)
     }
 }
 
@@ -249,12 +251,6 @@ pub trait Streamer<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn supports_capacity() {
-        let buffer = Buffer::with_capacity(8);
-        assert_eq!(buffer.capacity(), 8);
-    }
 
     #[test]
     fn when_empty_there_will_be_nothing_to_read() {
