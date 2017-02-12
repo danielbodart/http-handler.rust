@@ -2,6 +2,7 @@ use std::usize;
 use std::io::{Read, BufRead, Write, Result, Error, ErrorKind};
 use std::cmp::min;
 use std::fmt::{Debug, Display};
+use std::slice::from_raw_parts_mut;
 
 pub trait ReadFrom {
     fn read_from<F>(&mut self, fun: F) -> Result<usize>
@@ -20,7 +21,7 @@ pub struct Buffer<T> {
     pub write_position: usize,
 }
 
-impl<T: AsRef<[u8]>> Buffer<T>{
+impl<T: AsRef<[u8]>> Buffer<T> {
     pub fn as_read(&self) -> &[u8] {
         &self.value.as_ref()[self.read_position..self.write_position]
     }
@@ -34,7 +35,7 @@ impl<T: AsRef<[u8]>> Buffer<T>{
     }
 }
 
-impl<T: AsRef<[u8]> + AsMut<[u8]>> Buffer<T>{
+impl<T: AsRef<[u8]> + AsMut<[u8]>> Buffer<T> {
     pub fn as_write(&mut self) -> &mut [u8] {
         &mut self.value.as_mut()[self.write_position..]
     }
@@ -49,7 +50,7 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> Buffer<T>{
     }
 }
 
-impl<T: AsRef<[u8]>> From<T> for Buffer<T>{
+impl<T: AsRef<[u8]>> From<T> for Buffer<T> {
     fn from(value: T) -> Self {
         Buffer {
             value: value,
@@ -108,8 +109,8 @@ impl SimpleError {
 }
 
 #[allow(unused_variables)]
-pub fn unit(result:Result<usize>) -> Result<()> {
-    result.map(|ignore|())
+pub fn unit(result: Result<usize>) -> Result<()> {
+    result.map(|ignore| ())
 }
 
 pub fn consume(result: Result<usize>) -> Result<()> {
@@ -124,6 +125,40 @@ impl<T: AsRef<[u8]>> ReadFrom for Buffer<T> {
     fn read_from<F>(&mut self, mut fun: F) -> Result<usize>
         where F: FnMut(&[u8]) -> Result<usize> {
         let result = fun(self.as_read());
+        if let Ok(count) = result {
+            self.increment_read(count);
+        }
+        result
+    }
+}
+
+pub trait SplitRead<'a> {
+    type Output: SplitRead<'a>;
+
+    fn split_read<F>(&'a mut self, fun: F) -> Result<usize>
+        where F: FnMut(&[u8], Box<FnMut(usize) -> Self::Output>) -> Result<usize>;
+}
+
+impl<'a, T: AsRef<[u8]> + AsMut<[u8]>> SplitRead<'a> for Buffer<T> {
+    type Output = Buffer<&'a mut [u8]>;
+
+    fn split_read<F>(&'a mut self, mut fun: F) -> Result<usize>
+        where F: FnMut(&[u8], Box<FnMut(usize) -> Self::Output>) -> Result<usize> {
+        let result = {
+            let data = self.value.as_mut();
+
+            let ptr: *mut u8 = data.as_mut_ptr();
+            let len = data.len();
+            let read = self.read_position;
+            let write = self.write_position;
+
+            let slice = &data[read..write];
+
+            fun(slice, Box::new(move |offset| {
+                let remainder = unsafe { from_raw_parts_mut(ptr.offset((read + offset) as isize), len - offset) };
+                Buffer { value: remainder, read_position: 0, write_position: write - offset }
+            }))
+        };
         if let Ok(count) = result {
             self.increment_read(count);
         }
@@ -301,5 +336,33 @@ mod tests {
         }).expect("Could not read_from");
         assert_eq!(buffer.read_position, 0);
         assert_eq!(buffer.write_position, 0);
+    }
+
+    #[test]
+    fn split_read() {
+        let mut buffer = Buffer::with_capacity(10);
+        let mut data = &b"1234567890"[..];
+        buffer.fill(&mut data).expect("peace");
+        let read = buffer.split_read(|slice, mut splitter| {
+            assert_eq!(slice, &b"1234567890"[..]);
+            let mut read = 2;
+            let mut remainder = splitter(read);
+
+            read += remainder.split_read(|slice, _splitter| {
+                assert_eq!(slice, &b"34567890"[..]);
+                Ok(2)
+            })?;
+
+            read += remainder.split_read(|slice, _splitter| {
+                assert_eq!(slice, &b"567890"[..]);
+                Ok(2)
+            })?;
+            Ok(read)
+        }).unwrap();
+        assert_eq!(read, 6);
+        buffer.split_read(|slice, mut _splitter| {
+            assert_eq!(slice, &b"7890"[..]);
+            Ok(2)
+        }).unwrap();
     }
 }
