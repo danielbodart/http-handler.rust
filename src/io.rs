@@ -21,7 +21,7 @@ pub struct Buffer<B> {
     pub write_position: usize,
 }
 
-impl<B: AsRef<[u8]>> Buffer<B> {
+impl<B> Buffer<B> where B: AsRef<[u8]> {
     pub fn as_read(&self) -> &[u8] {
         &self.value.as_ref()[self.read_position..self.write_position]
     }
@@ -35,7 +35,7 @@ impl<B: AsRef<[u8]>> Buffer<B> {
     }
 }
 
-impl<B: AsRef<[u8]> + AsMut<[u8]>> Buffer<B> {
+impl<B> Buffer<B> where B: AsRef<[u8]> + AsMut<[u8]> {
     pub fn as_write(&mut self) -> &mut [u8] {
         &mut self.value.as_mut()[self.write_position..]
     }
@@ -50,7 +50,7 @@ impl<B: AsRef<[u8]> + AsMut<[u8]>> Buffer<B> {
     }
 }
 
-impl<B: AsRef<[u8]>> From<B> for Buffer<B> {
+impl<B> From<B> for Buffer<B> where B: AsRef<[u8]> {
     fn from(value: B) -> Self {
         Buffer {
             value: value,
@@ -68,7 +68,7 @@ impl Buffer<Vec<u8>> {
     }
 }
 
-impl<B: AsRef<[u8]>> Read for Buffer<B> {
+impl<B> Read for Buffer<B> where B: AsRef<[u8]> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         self.read_from(|slice| {
             let size = min(slice.len(), buf.len());
@@ -78,7 +78,7 @@ impl<B: AsRef<[u8]>> Read for Buffer<B> {
     }
 }
 
-impl<B: AsRef<[u8]> + AsMut<[u8]>> Write for Buffer<B> {
+impl<B> Write for Buffer<B> where B: AsRef<[u8]> + AsMut<[u8]> {
     fn write(&mut self, buf: &[u8]) -> Result<usize> {
         self.write_into(|slice| {
             let size = min(slice.len(), buf.len());
@@ -89,6 +89,17 @@ impl<B: AsRef<[u8]> + AsMut<[u8]>> Write for Buffer<B> {
 
     fn flush(&mut self) -> Result<()> {
         Ok(())
+    }
+}
+
+impl<B> ReadFrom for Buffer<B> where B: AsRef<[u8]> {
+    fn read_from<F>(&mut self, mut fun: F) -> Result<usize>
+        where F: FnMut(&[u8]) -> Result<usize> {
+        let result = fun(self.as_read());
+        if let Ok(count) = result {
+            self.increment_read(count);
+        }
+        result
     }
 }
 
@@ -121,16 +132,6 @@ pub fn consume(result: Result<usize>) -> Result<()> {
     }
 }
 
-impl<T: AsRef<[u8]>> ReadFrom for Buffer<T> {
-    fn read_from<F>(&mut self, mut fun: F) -> Result<usize>
-        where F: FnMut(&[u8]) -> Result<usize> {
-        let result = fun(self.as_read());
-        if let Ok(count) = result {
-            self.increment_read(count);
-        }
-        result
-    }
-}
 
 pub trait SplitRead<'a> {
     type Output: SplitRead<'a>;
@@ -139,7 +140,7 @@ pub trait SplitRead<'a> {
         where F: FnMut(&[u8], Box<FnMut(usize) -> Self::Output>) -> Result<usize>;
 }
 
-impl<'a, B: AsRef<[u8]> + AsMut<[u8]>> SplitRead<'a> for Buffer<B> {
+impl<'a, B> SplitRead<'a> for Buffer<B> where B: AsRef<[u8]> + AsMut<[u8]> {
     type Output = Buffer<&'a mut [u8]>;
 
     fn split_read<F>(&'a mut self, mut fun: F) -> Result<usize>
@@ -166,7 +167,7 @@ impl<'a, B: AsRef<[u8]> + AsMut<[u8]>> SplitRead<'a> for Buffer<B> {
     }
 }
 
-impl<B: AsRef<[u8]> + AsMut<[u8]>> WriteInto for Buffer<B> {
+impl<B> WriteInto for Buffer<B> where B: AsRef<[u8]> + AsMut<[u8]> {
     fn write_into<F>(&mut self, mut fun: F) -> Result<usize>
         where F: FnMut(&mut [u8]) -> Result<usize> {
         let result = fun(self.as_write());
@@ -202,13 +203,15 @@ impl<T> BufferedRead<T, Vec<u8>> where T: Read + Sized {
             buffer: Buffer::with_capacity(4096),
         }
     }
+}
 
+impl<T, B> BufferedRead<T, B> where T: Read + Sized, B: AsRef<[u8]> + AsMut<[u8]> {
     pub fn fill(&mut self) -> Result<usize> {
         self.buffer.fill(&mut self.inner)
     }
 }
 
-impl<T> BufRead for BufferedRead<T, Vec<u8>> where T: Read + Sized {
+impl<T, B> BufRead for BufferedRead<T, B> where T: Read + Sized, B: AsRef<[u8]> + AsMut<[u8]> {
     fn fill_buf(&mut self) -> Result<&[u8]> {
         self.fill()?;
         Ok(self.buffer.as_read())
@@ -219,14 +222,14 @@ impl<T> BufRead for BufferedRead<T, Vec<u8>> where T: Read + Sized {
     }
 }
 
-impl<T> Read for BufferedRead<T, Vec<u8>> where T: Read + Sized {
+impl<T, B> Read for BufferedRead<T, B> where T: Read + Sized, B: AsRef<[u8]> + AsMut<[u8]> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         self.fill()?;
         self.buffer.read(buf)
     }
 }
 
-impl<T> ReadFrom for BufferedRead<T, Vec<u8>> where T: Read + Sized {
+impl<T, B> ReadFrom for BufferedRead<T, B> where T: Read + Sized, B: AsRef<[u8]> + AsMut<[u8]> {
     fn read_from<F>(&mut self, fun: F) -> Result<usize>
         where F: FnMut(&[u8]) -> Result<usize> {
         self.fill()?;
