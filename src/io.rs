@@ -15,13 +15,13 @@ pub trait WriteInto {
 }
 
 #[derive(Debug)]
-pub struct Buffer<T> {
-    value: T,
+pub struct Buffer<B> {
+    value: B,
     pub read_position: usize,
     pub write_position: usize,
 }
 
-impl<T: AsRef<[u8]>> Buffer<T> {
+impl<B: AsRef<[u8]>> Buffer<B> {
     pub fn as_read(&self) -> &[u8] {
         &self.value.as_ref()[self.read_position..self.write_position]
     }
@@ -35,7 +35,7 @@ impl<T: AsRef<[u8]>> Buffer<T> {
     }
 }
 
-impl<T: AsRef<[u8]> + AsMut<[u8]>> Buffer<T> {
+impl<B: AsRef<[u8]> + AsMut<[u8]>> Buffer<B> {
     pub fn as_write(&mut self) -> &mut [u8] {
         &mut self.value.as_mut()[self.write_position..]
     }
@@ -50,8 +50,8 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> Buffer<T> {
     }
 }
 
-impl<T: AsRef<[u8]>> From<T> for Buffer<T> {
-    fn from(value: T) -> Self {
+impl<B: AsRef<[u8]>> From<B> for Buffer<B> {
+    fn from(value: B) -> Self {
         Buffer {
             value: value,
             read_position: 0,
@@ -68,7 +68,7 @@ impl Buffer<Vec<u8>> {
     }
 }
 
-impl<T: AsRef<[u8]>> Read for Buffer<T> {
+impl<B: AsRef<[u8]>> Read for Buffer<B> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         self.read_from(|slice| {
             let size = min(slice.len(), buf.len());
@@ -78,7 +78,7 @@ impl<T: AsRef<[u8]>> Read for Buffer<T> {
     }
 }
 
-impl<T: AsRef<[u8]> + AsMut<[u8]>> Write for Buffer<T> {
+impl<B: AsRef<[u8]> + AsMut<[u8]>> Write for Buffer<B> {
     fn write(&mut self, buf: &[u8]) -> Result<usize> {
         self.write_into(|slice| {
             let size = min(slice.len(), buf.len());
@@ -139,7 +139,7 @@ pub trait SplitRead<'a> {
         where F: FnMut(&[u8], Box<FnMut(usize) -> Self::Output>) -> Result<usize>;
 }
 
-impl<'a, T: AsRef<[u8]> + AsMut<[u8]>> SplitRead<'a> for Buffer<T> {
+impl<'a, B: AsRef<[u8]> + AsMut<[u8]>> SplitRead<'a> for Buffer<B> {
     type Output = Buffer<&'a mut [u8]>;
 
     fn split_read<F>(&'a mut self, mut fun: F) -> Result<usize>
@@ -166,7 +166,7 @@ impl<'a, T: AsRef<[u8]> + AsMut<[u8]>> SplitRead<'a> for Buffer<T> {
     }
 }
 
-impl<T: AsRef<[u8]> + AsMut<[u8]>> WriteInto for Buffer<T> {
+impl<B: AsRef<[u8]> + AsMut<[u8]>> WriteInto for Buffer<B> {
     fn write_into<F>(&mut self, mut fun: F) -> Result<usize>
         where F: FnMut(&mut [u8]) -> Result<usize> {
         let result = fun(self.as_write());
@@ -190,13 +190,13 @@ impl ReadFrom for BufRead {
 
 /// Supports fragmented input unlike `std::io::BufReader` and is much simpler!
 #[derive(Debug)]
-pub struct BufferedRead<T> where T: Read + Sized {
+pub struct BufferedRead<T, B> {
     pub inner: T,
-    pub buffer: Buffer<Vec<u8>>,
+    pub buffer: Buffer<B>,
 }
 
-impl<T> BufferedRead<T> where T: Read + Sized {
-    pub fn new(inner: T) -> BufferedRead<T> {
+impl<T> BufferedRead<T, Vec<u8>> where T: Read + Sized {
+    pub fn new(inner: T) -> BufferedRead<T, Vec<u8>> {
         BufferedRead {
             inner: inner,
             buffer: Buffer::with_capacity(4096),
@@ -208,7 +208,7 @@ impl<T> BufferedRead<T> where T: Read + Sized {
     }
 }
 
-impl<T> BufRead for BufferedRead<T> where T: Read + Sized {
+impl<T> BufRead for BufferedRead<T, Vec<u8>> where T: Read + Sized {
     fn fill_buf(&mut self) -> Result<&[u8]> {
         self.fill()?;
         Ok(self.buffer.as_read())
@@ -219,14 +219,14 @@ impl<T> BufRead for BufferedRead<T> where T: Read + Sized {
     }
 }
 
-impl<T> Read for BufferedRead<T> where T: Read + Sized {
+impl<T> Read for BufferedRead<T, Vec<u8>> where T: Read + Sized {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         self.fill()?;
         self.buffer.read(buf)
     }
 }
 
-impl<T> ReadFrom for BufferedRead<T> where T: Read + Sized {
+impl<T> ReadFrom for BufferedRead<T, Vec<u8>> where T: Read + Sized {
     fn read_from<F>(&mut self, fun: F) -> Result<usize>
         where F: FnMut(&[u8]) -> Result<usize> {
         self.fill()?;
@@ -340,7 +340,7 @@ mod tests {
 
     #[test]
     fn split_read() {
-        let mut buffer = Buffer::with_capacity(10);
+        let mut buffer = Buffer::with_capacity(20);
         let mut data = &b"1234567890"[..];
         buffer.fill(&mut data).expect("peace");
         let read = buffer.split_read(|slice, mut splitter| {
