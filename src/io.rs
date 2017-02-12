@@ -302,7 +302,6 @@ pub trait Streamer<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::error::Error;
 
     #[test]
     fn supports_capacity() {
@@ -391,47 +390,110 @@ mod tests {
     #[allow(unused_must_use)]
     fn buffered_read_can_nest() {
         let data = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26][..];
-        let mut buffered = BufferedRead::with_capacity(2, data);
+        let mut buffered = BufferedRead::with_capacity(3, data);
         buffered.read_segment(|head, tail| {
-            assert_eq!(head, &[1, 2][..]);
+            assert_eq!(head, &[1, 2, 3][..]);
             tail.read_segment(|head, tail| {
-                assert_eq!(head, &[3, 4][..]);
+                assert_eq!(head, &[4, 5, 6][..]);
                 Ok(1)
             })?;
-            Ok(2)
+            Ok(3)
         }).expect("No errors");
         buffered.read_segment(|head, tail| {
-            assert_eq!(head, &[4, 5][..]);
+            assert_eq!(head, &[5, 6, 7][..]);
             let failed = tail.read_segment(|head, tail| {
-                assert_eq!(head, &[6, 7][..]);
+                assert_eq!(head, &[8, 9, 10][..]);
                 Err(SimpleError::error(""))
             });
             assert!(failed.is_err());
             tail.read_segment(|head, tail| {
-                assert_eq!(head, &[6, 7][..]);
+                assert_eq!(head, &[8, 9, 10][..]);
                 Ok(1)
             })?;
+            Ok(3)
+        }).expect("No errors");
+        buffered.read_segment(|head, tail| {
+            assert_eq!(head, &[9, 10, 11][..]);
+            tail.read_segment(|head, tail| {
+                assert_eq!(head, &[12, 13, 14][..]);
+                Ok(1)
+            })?;
+            tail.read_segment(|head, tail| {
+                assert_eq!(head, &[13, 14][..]);
+                Ok(1)
+            })?;
+            let failed = tail.read_segment(|head, tail| {
+                assert_eq!(head, &[14][..]);
+                Err(SimpleError::error(""))
+            });
+            assert!(failed.is_err());
+            tail.read_segment(|head, tail| {
+                assert_eq!(head, &[14][..]);
+                Ok(1)
+            });
+            Ok(3)
+        }).expect("No errors");
+        buffered.read_segment(|head, tail| {
+            assert_eq!(head, &[15, 16, 17][..]);
             Ok(2)
         }).expect("No errors");
-        buffered.read_segment(|head, tail| {
-            assert_eq!(head, &[7, 8, 9, 10][..]);
-            tail.read_segment(|head, tail| {
-                assert_eq!(head, &[8, 9, 10, 11][..]);
-                Ok(1)
-            })?;
-            tail.read_segment(|head, tail| {
-                assert_eq!(head, &[9, 10, 11][..]);
-                Ok(1)
-            })?;
-            tail.read_segment(|head, tail| {
-                assert_eq!(head, &[10, 11][..]);
-                Err(SimpleError::error(""))
-            })?;
-            panic!("Should never get here")
-        }).expect("No errors");
-        buffered.read_segment(|head, tail| {
-            assert_eq!(head, &[4, 5, 6, 7][..]);
-            Ok(0)
-        }).expect("No errors");
+    }
+
+    #[test]
+    fn vec_fun() {
+        use std::slice;
+        use std::cmp::min;
+        use std::marker::Copy;
+
+        // Pretend function that does unknown amount of parsing (not 5 every time)
+        fn parse(slice: &[u8]) -> (&[u8], usize) {
+            (&slice[..5], 5)
+        }
+
+        // Pretend function
+        fn fill<T>(buffer: &mut [T], new_data: &[T], offset: usize) -> usize
+            where T: Copy {
+            let count = min(buffer.len() - offset, new_data.len());
+            &buffer[offset..offset + count].copy_from_slice(&new_data[..count]);
+            count
+        }
+
+        fn split_off<'a, T>(ptr: *mut T, offset: isize, len: usize) -> &'a mut [T] {
+            unsafe { slice::from_raw_parts_mut(ptr.offset(offset), len) }
+        }
+
+        let mut buffer: [u8; 20] = [0; 20];
+        let max = buffer.len();
+        let mut write_position = fill(&mut buffer, &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9], 0);
+
+        let slice = &mut buffer[..write_position];
+        assert_eq!(slice, &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+        let ptr: *mut u8 = slice.as_mut_ptr();
+
+        // I don't know how big parsed is up front
+        let (parsed, consumed) = parse(slice);
+        let mut read_position = consumed;
+
+        let mut remainder = split_off(ptr, read_position as isize, max - read_position);
+        write_position = write_position - read_position;
+
+        write_position = write_position + fill(&mut remainder, &[10, 11, 12, 13], write_position);
+        let another_slice = &remainder[..write_position];
+        assert_eq!(another_slice, &[5, 6, 7, 8, 9, 10, 11, 12, 13]);
+        let (second_parsed, consumed) = parse(another_slice);
+        let read_position = read_position + consumed;
+
+        let mut remainder = split_off(ptr, read_position as isize, max - read_position);
+        write_position = write_position - read_position;
+        read_position = 0;
+
+        write_position = write_position + fill(&mut remainder, &[14, 15, 16, 17], write_position);
+        let another_slice = &remainder[..cursor];
+        assert_eq!(another_slice, &[10, 11, 12, 13, 14, 15, 16, 17]);
+        let (third_parsed, _) = parse(another_slice);
+
+        assert_eq!(parsed, &[0, 1, 2, 3, 4]);
+        assert_eq!(second_parsed, &[5, 6, 7, 8, 9]);
+        assert_eq!(third_parsed, &[10, 11, 12, 13, 14]);
     }
 }

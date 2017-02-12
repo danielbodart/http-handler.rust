@@ -534,7 +534,7 @@ mod tests {
         use ast::{Chunk, ChunkExtensions, Headers};
 
         let data = &b"4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n0\r\n\r\nGET /new/request HTTP/1.1\r\n"[..];
-        let buffered = BufferedRead::new(data);
+        let buffered = BufferedRead::from(data);
         let mut stream = ChunkStream::new(buffered);
         if let Some(Ok(chunk)) = stream.next() {
             assert_eq!(chunk, Chunk::Slice(ChunkExtensions(vec![]), &b"Wiki"[..]));
@@ -560,9 +560,9 @@ mod tests {
         use io::{BufferedRead};
 
         let data = &b"4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n0\r\n\r\nGET /new/request HTTP/1.1\r\n"[..];
-        let mut producer = BufferedRead::new(data);
+        let mut producer = BufferedRead::from(data);
         {
-            let mut consumer = BufferedRead::new(ChunkStream::new(&mut producer));
+            let mut consumer = BufferedRead::from(ChunkStream::new(&mut producer));
 
             let mut result = String::new();
             consumer.read_to_string(&mut result).unwrap();
@@ -580,7 +580,7 @@ mod tests {
         use io::{BufferedRead};
 
         let data = &b"4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n0\r\n\r\nGET /new/request HTTP/1.1\r\n"[..];
-        let mut producer = BufferedRead::new(data);
+        let mut producer = BufferedRead::from(data);
         {
             ChunkStream::new(&mut producer);
         }
