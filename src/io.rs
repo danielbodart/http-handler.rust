@@ -14,29 +14,15 @@ pub trait WriteInto {
 }
 
 #[derive(Debug)]
-pub struct Buffer {
-    value: Vec<u8>,
+pub struct Buffer<T: AsRef<[u8]>> {
+    value: T,
     pub read_position: usize,
     pub write_position: usize,
 }
 
-impl Buffer {
-    pub fn with_capacity(capacity: usize) -> Buffer {
-        let mut value = Vec::with_capacity(capacity);
-        unsafe { value.set_len(capacity) }
-        Buffer {
-            value: value,
-            read_position: 0,
-            write_position: 0,
-        }
-    }
-
-    pub fn capacity(&self) -> usize {
-        self.value.capacity()
-    }
-
+impl<T: AsRef<[u8]>> Buffer<T>{
     pub fn as_read(&self) -> &[u8] {
-        &self.value[self.read_position..self.write_position]
+        &self.value.as_ref()[self.read_position..self.write_position]
     }
 
     pub fn increment_read(&mut self, value: usize) {
@@ -46,9 +32,11 @@ impl Buffer {
             self.write_position = 0;
         }
     }
+}
 
+impl<T: AsRef<[u8]> + AsMut<[u8]>> Buffer<T>{
     pub fn as_write(&mut self) -> &mut [u8] {
-        &mut self.value[self.write_position..]
+        &mut self.value.as_mut()[self.write_position..]
     }
 
     pub fn increment_write(&mut self, value: usize) {
@@ -61,7 +49,23 @@ impl Buffer {
     }
 }
 
-impl Read for Buffer {
+impl Buffer<Vec<u8>> {
+    pub fn with_capacity(capacity: usize) -> Buffer<Vec<u8>> {
+        let mut value = Vec::with_capacity(capacity);
+        unsafe { value.set_len(capacity) }
+        Buffer {
+            value: value,
+            read_position: 0,
+            write_position: 0,
+        }
+    }
+
+    pub fn capacity(&self) -> usize {
+        self.value.capacity()
+    }
+}
+
+impl<T: AsRef<[u8]>> Read for Buffer<T> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         self.read_from(|slice| {
             let size = min(slice.len(), buf.len());
@@ -71,7 +75,7 @@ impl Read for Buffer {
     }
 }
 
-impl Write for Buffer {
+impl<T: AsRef<[u8]> + AsMut<[u8]>> Write for Buffer<T> {
     fn write(&mut self, buf: &[u8]) -> Result<usize> {
         self.write_into(|slice| {
             let size = min(slice.len(), buf.len());
@@ -114,7 +118,7 @@ pub fn consume(result: Result<usize>) -> Result<()> {
     }
 }
 
-impl ReadFrom for Buffer {
+impl<T: AsRef<[u8]>> ReadFrom for Buffer<T> {
     fn read_from<F>(&mut self, mut fun: F) -> Result<usize>
         where F: FnMut(&[u8]) -> Result<usize> {
         let result = fun(self.as_read());
@@ -125,7 +129,7 @@ impl ReadFrom for Buffer {
     }
 }
 
-impl WriteInto for Buffer {
+impl<T: AsRef<[u8]> + AsMut<[u8]>> WriteInto for Buffer<T> {
     fn write_into<F>(&mut self, mut fun: F) -> Result<usize>
         where F: FnMut(&mut [u8]) -> Result<usize> {
         let result = fun(self.as_write());
@@ -151,7 +155,7 @@ impl ReadFrom for BufRead {
 #[derive(Debug)]
 pub struct BufferedRead<T> where T: Read + Sized {
     pub inner: T,
-    pub buffer: Buffer,
+    pub buffer: Buffer<Vec<u8>>,
 }
 
 impl<T> BufferedRead<T> where T: Read + Sized {

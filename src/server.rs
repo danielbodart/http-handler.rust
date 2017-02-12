@@ -65,7 +65,7 @@ impl<'a> Server<'a> {
 pub struct Stream;
 
 impl Stream {
-    fn read<R, F>(reader: &mut R, buffer: &mut Buffer, mut fun: F) -> Result<()>
+    fn read<R, F>(reader: &mut R, buffer: &mut Buffer<Vec<u8>>, mut fun: F) -> Result<()>
         where R: Read + Sized, F: FnMut(&mut Message) -> Result<()> {
         consume(buffer.from(reader))?;
         unit(buffer.read_from(|slice| {
