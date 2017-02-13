@@ -52,7 +52,7 @@ impl<T: AsRef<Path>> HttpHandler for FileHandler<T> {
     fn handle<F>(&mut self, request: &mut Request, mut fun: F) -> Result<()>
         where F: FnMut(&mut Response) -> Result<()> + Sized {
         fun(&mut match *request {
-            Request { method: "GET", uri: Uri { path, .. }, .. } => { self.get(path).unwrap_or(Response::not_found().message("Not Found")) }
+            Request { method: "GET", uri: Uri { path, .. }, .. } => { self.get(path).unwrap_or_else(|_|Response::not_found().message("Not Found")) }
             _ => { Response::method_not_allowed() }
         })
     }

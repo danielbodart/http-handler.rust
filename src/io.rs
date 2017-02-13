@@ -35,7 +35,7 @@ impl<B> Buffer<B> where B: AsRef<[u8]> {
     }
 }
 
-impl<B> Buffer<B> where B: AsRef<[u8]> + AsMut<[u8]> {
+impl<B> Buffer<B> where B: AsMut<[u8]> {
     pub fn as_write(&mut self) -> &mut [u8] {
         &mut self.value.as_mut()[self.write_position..]
     }
@@ -78,7 +78,7 @@ impl<B> Read for Buffer<B> where B: AsRef<[u8]> {
     }
 }
 
-impl<B> Write for Buffer<B> where B: AsRef<[u8]> + AsMut<[u8]> {
+impl<B> Write for Buffer<B> where B: AsMut<[u8]> {
     fn write(&mut self, buf: &[u8]) -> Result<usize> {
         self.write_into(|slice| {
             let size = min(slice.len(), buf.len());
@@ -132,7 +132,7 @@ pub fn consume(result: Result<usize>) -> Result<()> {
     }
 }
 
-impl<B> WriteInto for Buffer<B> where B: AsRef<[u8]> + AsMut<[u8]> {
+impl<B> WriteInto for Buffer<B> where B: AsMut<[u8]> {
     fn write_into<F>(&mut self, mut fun: F) -> Result<usize>
         where F: FnMut(&mut [u8]) -> Result<usize> {
         let result = fun(self.as_write());
@@ -170,7 +170,7 @@ impl<T> BufferedRead<T, Vec<u8>> where T: Read + Sized {
     }
 }
 
-impl<T, B> BufferedRead<T, B> where T: Read + Sized, B: AsRef<[u8]> + AsMut<[u8]> {
+impl<T, B> BufferedRead<T, B> where T: Read + Sized, B: AsMut<[u8]> {
     pub fn fill(&mut self) -> Result<usize> {
         self.buffer.fill(&mut self.inner)
     }

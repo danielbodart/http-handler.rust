@@ -95,6 +95,9 @@ impl<'a> fmt::Display for Headers<'a> {
     }
 }
 
+type NomParser<'a, T> = fn(&'a[u8]) -> IResult<&'a[u8], Vec<T>>;
+
+
 impl<'a> Headers<'a> {
     pub fn new() -> Headers<'a> {
         Headers(vec!())
@@ -122,7 +125,7 @@ impl<'a> Headers<'a> {
         Ok(result)
     }
 
-    pub fn parse_nom<T>(&'a self, name: &str, fun: fn(&'a[u8]) -> IResult<&'a[u8], Vec<T>>) -> Result<Vec<T>>
+    pub fn parse_nom<T>(&'a self, name: &str, fun: NomParser<'a, T>) -> Result<Vec<T>>
         where T: 'a {
         self.parse(name, |s| {
             let (encodings, remainder) = result(fun(s.as_bytes()))?;
@@ -136,7 +139,7 @@ impl<'a> Headers<'a> {
     pub fn transfer_encoding(&'a self) -> Vec<TransferCoding<'a>>{
         use grammar::transfer_encoding;
 
-        self.parse_nom("Transfer-Encoding", transfer_encoding).unwrap_or(Vec::new())
+        self.parse_nom("Transfer-Encoding", transfer_encoding).unwrap_or_else(|_|Default::default())
     }
 
     pub fn content_length(&self) -> Option<u64> {
