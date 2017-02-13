@@ -137,14 +137,14 @@ pub trait SplitRead<'a> {
     type Output: SplitRead<'a>;
 
     fn split_read<F>(&'a mut self, fun: F) -> Result<usize>
-        where F: FnMut(&[u8], Box<FnMut(usize) -> Self::Output>) -> Result<usize>;
+        where F: FnMut(&[u8], Box<FnMut(usize) -> Self::Output + 'a>) -> Result<usize>;
 }
 
 impl<'a, B> SplitRead<'a> for Buffer<B> where B: AsRef<[u8]> + AsMut<[u8]> {
     type Output = Buffer<&'a mut [u8]>;
 
     fn split_read<F>(&'a mut self, mut fun: F) -> Result<usize>
-        where F: FnMut(&[u8], Box<FnMut(usize) -> Self::Output>) -> Result<usize> {
+        where F: FnMut(&[u8], Box<FnMut(usize) -> Self::Output +'a>) -> Result<usize> {
         let result = {
             let data = self.value.as_mut();
 
@@ -234,6 +234,24 @@ impl<T, B> ReadFrom for BufferedRead<T, B> where T: Read + Sized, B: AsRef<[u8]>
         where F: FnMut(&[u8]) -> Result<usize> {
         self.fill()?;
         self.buffer.read_from(fun)
+    }
+}
+
+impl<'a, T: 'a, B> SplitRead<'a> for BufferedRead<T, B> where T: Read + Sized, B: AsRef<[u8]> + AsMut<[u8]> {
+    type Output = BufferedRead<&'a mut T, &'a mut [u8]>;
+
+    fn split_read<F>(&'a mut self, mut fun: F) -> Result<usize>
+        where F: FnMut(&[u8], Box<FnMut(usize) -> Self::Output + 'a>) -> Result<usize> {
+        self.fill()?;
+        let copy = &mut self.inner;
+        self.buffer.split_read(|slice, mut splitter| {
+            fun(slice, Box::new(move |offset| {
+                BufferedRead {
+                    inner: copy,
+                    buffer: splitter(offset),
+                }
+            }))
+        })
     }
 }
 
