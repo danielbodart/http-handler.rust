@@ -363,26 +363,29 @@ mod tests {
 
     #[test]
     fn split_read_with_buffer() {
+        let mut data = Fragmented::new(&b"1234567890"[..], 4);
         let mut buffer = Buffer::with_capacity(20);
-        let mut data = &b"1234567890"[..];
         buffer.fill(&mut data).expect("peace");
         let read = buffer.split_read(|slice, mut splitter| {
-            assert_eq!(slice, &b"1234567890"[..]);
+            assert_eq!(slice, &b"12"[..]);
             let mut read = 2;
-            let mut remainder = splitter(read);
+            let mut buffer = splitter(read);
+            buffer.fill(&mut data).expect("peace");
 
-            read += remainder.split_read(|slice, _splitter| {
-                assert_eq!(slice, &b"34567890"[..]);
-                Ok(2)
+            read += buffer.split_read(|slice, _splitter| {
+                assert_eq!(slice, &b"34"[..]);
+                Ok(0)
             })?;
+            buffer.fill(&mut data).expect("peace");
 
-            read += remainder.split_read(|slice, _splitter| {
-                assert_eq!(slice, &b"567890"[..]);
-                Ok(2)
+            read += buffer.split_read(|slice, _splitter| {
+                assert_eq!(slice, &b"3456"[..]);
+                Ok(4)
             })?;
             Ok(read)
         }).unwrap();
         assert_eq!(read, 6);
+        buffer.fill(&mut data).expect("peace");
         buffer.split_read(|slice, mut _splitter| {
             assert_eq!(slice, &b"7890"[..]);
             Ok(2)
@@ -391,8 +394,8 @@ mod tests {
 
     #[test]
     fn split_read_with_buffered_read() {
-        let data = &b"1234567890"[..];
-        let mut reader = BufferedRead::new(Fragmented::new(data, 4));
+        let mut data = Fragmented::new(&b"1234567890"[..], 4);
+        let mut reader = BufferedRead::new(data);
         let read = reader.split_read(|slice, mut splitter| {
             assert_eq!(slice, &b"12"[..]);
             let mut read = 2;
