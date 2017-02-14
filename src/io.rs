@@ -365,18 +365,18 @@ mod tests {
     fn split_read_with_buffer() {
         let mut data = Fragmented::new(&b"1234567890"[..], 4);
         let mut buffer = Buffer::with_capacity(20);
-        buffer.fill(&mut data).expect("peace");
+        buffer.fill(&mut data).unwrap();
         let read = buffer.split_read(|slice, mut splitter| {
             assert_eq!(slice, &b"12"[..]);
             let mut read = 2;
             let mut buffer = splitter(read);
-            buffer.fill(&mut data).expect("peace");
+            buffer.fill(&mut data).unwrap();
 
             read += buffer.split_read(|slice, _splitter| {
                 assert_eq!(slice, &b"34"[..]);
                 Ok(0)
             })?;
-            buffer.fill(&mut data).expect("peace");
+            buffer.fill(&mut data).unwrap();
 
             read += buffer.split_read(|slice, _splitter| {
                 assert_eq!(slice, &b"3456"[..]);
@@ -385,7 +385,7 @@ mod tests {
             Ok(read)
         }).unwrap();
         assert_eq!(read, 6);
-        buffer.fill(&mut data).expect("peace");
+        buffer.fill(&mut data).unwrap();
         buffer.split_read(|slice, mut _splitter| {
             assert_eq!(slice, &b"7890"[..]);
             Ok(2)
