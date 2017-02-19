@@ -229,14 +229,12 @@ impl<'a, B: 'a> SplitRead<'a> for B where B:BufRead {
             let slice = self.fill_buf()?;
 
             fun(slice, Box::new(move |offset| {
-                let buffer:&mut B = unsafe { &mut *ptr };
-                println!("offset: {}", offset);
+                let buffer = unsafe { &mut *ptr };
                 buffer.consume(offset);
                 buffer
             }))
         };
         if let Ok(count) = result {
-            println!("count: {}", count);
             self.consume(count);
         }
         result
