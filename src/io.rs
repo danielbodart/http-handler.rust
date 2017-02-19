@@ -2,7 +2,6 @@ use std::usize;
 use std::io::{Read, BufRead, Write, Result, Error, ErrorKind};
 use std::cmp::min;
 use std::fmt::{Debug, Display};
-use std::slice::from_raw_parts_mut;
 
 pub trait ReadFrom {
     fn read_from<F>(&mut self, fun: F) -> Result<usize>
@@ -381,7 +380,7 @@ mod tests {
 
     #[test]
     fn split_read_with_buffered_read() {
-        let mut data = Fragmented::new(&b"1234567890"[..], 5);
+        let data = Fragmented::new(&b"1234567890"[..], 5);
         let mut reader = BufferedRead::new(data);
         let read = reader.split_read(|slice, mut splitter| {
             assert_eq!(slice, &b"12"[..]);
