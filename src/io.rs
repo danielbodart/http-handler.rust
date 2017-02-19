@@ -78,6 +78,16 @@ impl<B> Read for Buffer<B> where B: AsRef<[u8]> {
     }
 }
 
+impl<B> BufRead for Buffer<B> where B: AsRef<[u8]> {
+    fn fill_buf(&mut self) -> Result<&[u8]> {
+        Ok(self.as_read())
+    }
+
+    fn consume(&mut self, amt: usize) {
+        self.increment_read(amt)
+    }
+}
+
 impl<B> Write for Buffer<B> where B: AsMut<[u8]> {
     fn write(&mut self, buf: &[u8]) -> Result<usize> {
         self.write_into(|slice| {
@@ -210,50 +220,27 @@ pub trait SplitRead<'a> {
         where F: FnMut(&[u8], Box<FnMut(usize) -> Self::Output + 'a>) -> Result<usize>;
 }
 
-impl<'a, B: 'a> SplitRead<'a> for Buffer<B> where B: AsRef<[u8]> + AsMut<[u8]> {
-    type Output = Buffer<&'a mut [u8]>;
+impl<'a, B: 'a> SplitRead<'a> for B where B:BufRead {
+    type Output = &'a mut B;
 
     fn split_read<F>(&'a mut self, mut fun: F) -> Result<usize>
         where F: FnMut(&[u8], Box<FnMut(usize) -> Self::Output + 'a>) -> Result<usize> {
         let result = {
-            let data = self.value.as_mut();
-
-            let ptr: *mut u8 = data.as_mut_ptr();
-            let len = data.len();
-            let read = self.read_position;
-            let write = self.write_position;
-
-            let slice = &data[read..write];
+            let ptr: *mut B = self;
+            let slice = self.fill_buf()?;
 
             fun(slice, Box::new(move |offset| {
-                let remainder = unsafe { from_raw_parts_mut(ptr.offset((read + offset) as isize), len - offset) };
-                Buffer { value: remainder, read_position: 0, write_position: write - offset }
+                let buffer:&mut B = unsafe { &mut *ptr };
+                println!("offset: {}", offset);
+                buffer.consume(offset);
+                buffer
             }))
         };
         if let Ok(count) = result {
-            self.increment_read(count);
+            println!("count: {}", count);
+            self.consume(count);
         }
         result
-    }
-}
-
-// TODO: Work out a safe way to do this
-impl<'a, T: 'a, B> SplitRead<'a> for BufferedRead<T, B> where T: Read + Sized, B: AsRef<[u8]> + AsMut<[u8]> {
-    type Output = BufferedRead<&'a mut T, &'a mut [u8]>;
-
-    fn split_read<F>(&'a mut self, mut fun: F) -> Result<usize>
-        where F: FnMut(&[u8], Box<FnMut(usize) -> Self::Output + 'a>) -> Result<usize> {
-        self.fill()?;
-        let ptr: *mut T = &mut self.inner;
-
-        self.buffer.split_read(|slice, mut splitter| {
-            fun(slice, Box::new(move |offset| {
-                BufferedRead {
-                    inner: unsafe { &mut *ptr },
-                    buffer: splitter(offset),
-                }
-            }))
-        })
     }
 }
 
@@ -363,29 +350,29 @@ mod tests {
 
     #[test]
     fn split_read_with_buffer() {
-        let mut data = Fragmented::new(&b"1234567890"[..], 4);
+        let mut data = Fragmented::new(&b"1234567890"[..], 5);
         let mut buffer = Buffer::with_capacity(20);
-        buffer.fill(&mut data).unwrap();
+        assert_eq!(buffer.fill(&mut data).unwrap(), 2);
         let read = buffer.split_read(|slice, mut splitter| {
             assert_eq!(slice, &b"12"[..]);
-            let mut read = 2;
-            let mut buffer = splitter(read);
-            buffer.fill(&mut data).unwrap();
+            let mut buffer = splitter(2);
+            assert_eq!(buffer.fill(&mut data).unwrap(), 2);
 
-            read += buffer.split_read(|slice, _splitter| {
+            buffer.split_read(|slice, _splitter| {
                 assert_eq!(slice, &b"34"[..]);
                 Ok(0)
             })?;
-            buffer.fill(&mut data).unwrap();
+            assert_eq!(buffer.fill(&mut data).unwrap(), 2);
 
-            read += buffer.split_read(|slice, _splitter| {
+            buffer.split_read(|slice, _splitter| {
                 assert_eq!(slice, &b"3456"[..]);
                 Ok(4)
             })?;
-            Ok(read)
+            Ok(0)
         }).unwrap();
-        assert_eq!(read, 6);
-        buffer.fill(&mut data).unwrap();
+        assert_eq!(read, 0);
+        assert_eq!(buffer.fill(&mut data).unwrap(), 2);
+        assert_eq!(buffer.fill(&mut data).unwrap(), 2);
         buffer.split_read(|slice, mut _splitter| {
             assert_eq!(slice, &b"7890"[..]);
             Ok(2)
@@ -394,25 +381,28 @@ mod tests {
 
     #[test]
     fn split_read_with_buffered_read() {
-        let mut data = Fragmented::new(&b"1234567890"[..], 4);
+        let mut data = Fragmented::new(&b"1234567890"[..], 5);
         let mut reader = BufferedRead::new(data);
         let read = reader.split_read(|slice, mut splitter| {
             assert_eq!(slice, &b"12"[..]);
-            let mut read = 2;
-            let mut remainder = splitter(read);
+            let mut remainder = splitter(2);
 
-            read += remainder.split_read(|slice, _splitter| {
+            remainder.split_read(|slice, _splitter| {
                 assert_eq!(slice, &b"34"[..]);
                 Ok(2)
             })?;
 
-            read += remainder.split_read(|slice, _splitter| {
+            remainder.split_read(|slice, _splitter| {
                 assert_eq!(slice, &b"56"[..]);
                 Ok(2)
             })?;
-            Ok(read)
+            Ok(0)
         }).unwrap();
-        assert_eq!(read, 6);
+        assert_eq!(read, 0);
+        reader.split_read(|slice, mut _splitter| {
+            assert_eq!(slice, &b"78"[..]);
+            Ok(0)
+        }).unwrap();
         reader.split_read(|slice, mut _splitter| {
             assert_eq!(slice, &b"7890"[..]);
             Ok(2)
