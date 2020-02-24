@@ -1,11 +1,10 @@
-use std::ascii::AsciiExt;
 use std::{fmt, str, usize};
 use std::io::{Read, Write, Result, copy, sink};
-use api::{WriteTo};
+use crate::api::{WriteTo};
 use std::borrow::{Cow, Borrow};
-use parser::result;
+use crate::parser::result;
 use nom::IResult;
-use io::SimpleError;
+use crate::io::SimpleError;
 
 #[derive(PartialEq, Debug)]
 pub struct HttpVersion {
@@ -137,7 +136,7 @@ impl<'a> Headers<'a> {
     }
 
     pub fn transfer_encoding(&'a self) -> Vec<TransferCoding<'a>>{
-        use grammar::transfer_encoding;
+        use crate::grammar::transfer_encoding;
 
         self.parse_nom("Transfer-Encoding", transfer_encoding).unwrap_or_else(|_|Default::default())
     }
@@ -163,7 +162,7 @@ impl<'a> Headers<'a> {
 pub enum MessageBody<'a> {
     None,
     Slice(&'a [u8]),
-    Reader(Box<Read + 'a>),
+    Reader(Box<dyn Read + 'a>),
 }
 
 impl<'a> MessageBody<'a> {
@@ -231,7 +230,7 @@ impl<'a> fmt::Debug for MessageBody<'a> {
 }
 
 impl<'a> WriteTo for MessageBody<'a> {
-    fn write_to(&mut self, writer: &mut Write) -> Result<usize> {
+    fn write_to(&mut self, writer: &mut dyn Write) -> Result<usize> {
         match *self {
             MessageBody::Reader(ref mut reader) => {
                 copy(reader, writer).map(|c| {
@@ -263,7 +262,7 @@ impl<'a> fmt::Display for MessageHead<'a> {
 }
 
 impl<'a> WriteTo for MessageHead<'a> {
-    fn write_to(&mut self, write: &mut Write) -> Result<usize> {
+    fn write_to(&mut self, write: &mut dyn Write) -> Result<usize> {
         let text = format!("{}{}\r\n", self.start_line, self.headers);
         let head = write.write(text.as_bytes())?;
         Ok(head)
@@ -284,7 +283,7 @@ impl<'a> fmt::Display for HttpMessage<'a> {
 }
 
 impl<'a> WriteTo for HttpMessage<'a> {
-    fn write_to(&mut self, write: &mut Write) -> Result<usize> {
+    fn write_to(&mut self, write: &mut dyn Write) -> Result<usize> {
         let text = format!("{}{}\r\n", self.start_line, self.headers);
         let head = write.write(text.as_bytes())?;
         let body = self.body.write_to(write)?;
@@ -316,8 +315,7 @@ pub enum Chunk<'a> {
 
 impl<'a> Chunk<'a> {
     pub fn read(slice: &[u8]) -> Result<(Chunk, usize)> {
-        use grammar::*;
-        use parser::result;
+        use crate::grammar::*;
 
         let ((size, extensions), remainder) = result(chunk_head(slice))?;
         if size > 0 {
@@ -341,7 +339,7 @@ impl<'a> ChunkedBody<'a> {
     pub fn new(mut chunks: Vec<Chunk<'a>>, last: ChunkExtensions<'a>, trailers: Headers<'a>) -> ChunkedBody<'a> {
         chunks.push(Chunk::Last(last, trailers));
         ChunkedBody {
-            chunks: chunks,
+            chunks,
         }
     }
 }
@@ -355,7 +353,7 @@ pub struct TransferParameter<'a> {
 impl<'a> TransferParameter<'a> {
     pub fn new<V>(name: &'a str, value: Option<V>) -> TransferParameter<'a>
         where V: Into<Cow<'a, str>> {
-        TransferParameter { name: name, value: value.map(|v| v.into()) }
+        TransferParameter { name, value: value.map(|v| v.into()) }
     }
 }
 

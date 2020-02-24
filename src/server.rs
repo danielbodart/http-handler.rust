@@ -7,8 +7,8 @@ use std::{thread, str};
 use std::sync::Arc;
 use std::marker::{Send};
 use std::borrow::{Cow, Borrow};
-use api::*;
-use io::*;
+use crate::api::*;
+use crate::io::*;
 
 pub struct Server<'a> {
     host: Cow<'a, str>,
@@ -36,7 +36,7 @@ impl<'a> Server<'a> {
                 let mut buffer = Buffer::with_capacity(4096);
                 let mut handler = fun()?;
                 loop {
-                    match Stream::read(&mut reader, &mut buffer, |mut message| {
+                    match Stream::read(&mut reader, &mut buffer, |message| {
                         if let Message::Request(ref mut request) = *message {
                             return handler.handle(request, |response| {
                                 consume(response.write_to(&mut writer))
@@ -94,7 +94,7 @@ impl HttpHandler for Client {
 
         request.write_to(&mut writer)?;
 
-        Stream::read(&mut reader, &mut buffer, |mut message| {
+        Stream::read(&mut reader, &mut buffer, |message| {
             if let Message::Response(ref mut response) = *message {
                 return fun(response)
             }
@@ -107,9 +107,9 @@ impl HttpHandler for Client {
 #[allow(unused_variables)]
 #[allow(unused_must_use)]
 mod tests {
-    use io::*;
-    use std::str;
-    use api::*;
+    use crate::io::*;
+    
+    use crate::api::*;
 
     #[test]
     fn read_supports_fragmentation() {

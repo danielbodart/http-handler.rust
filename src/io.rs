@@ -152,7 +152,7 @@ impl<B> WriteInto for Buffer<B> where B: AsMut<[u8]> {
     }
 }
 
-impl ReadFrom for BufRead {
+impl ReadFrom for dyn BufRead {
     fn read_from<F>(&mut self, mut fun: F) -> Result<usize>
         where F: FnMut(&[u8]) -> Result<usize> {
         let result = fun(self.fill_buf()?);
@@ -216,14 +216,14 @@ pub trait SplitRead<'a> {
     type Output: SplitRead<'a>;
 
     fn split_read<F>(&'a mut self, fun: F) -> Result<usize>
-        where F: FnMut(&[u8], Box<FnMut(usize) -> Self::Output + 'a>) -> Result<usize>;
+        where F: FnMut(&[u8], Box<dyn FnMut(usize) -> Self::Output + 'a>) -> Result<usize>;
 }
 
 impl<'a, B: 'a> SplitRead<'a> for B where B:BufRead {
     type Output = &'a mut B;
 
     fn split_read<F>(&'a mut self, mut fun: F) -> Result<usize>
-        where F: FnMut(&[u8], Box<FnMut(usize) -> Self::Output + 'a>) -> Result<usize> {
+        where F: FnMut(&[u8], Box<dyn FnMut(usize) -> Self::Output + 'a>) -> Result<usize> {
         let result = {
             let ptr: *mut B = self;
             let slice = self.fill_buf()?;
@@ -352,7 +352,7 @@ mod tests {
         assert_eq!(buffer.fill(&mut data).unwrap(), 2);
         let read = buffer.split_read(|slice, mut splitter| {
             assert_eq!(slice, &b"12"[..]);
-            let mut buffer = splitter(2);
+            let buffer = splitter(2);
             assert_eq!(buffer.fill(&mut data).unwrap(), 2);
 
             buffer.split_read(|slice, _splitter| {
@@ -382,7 +382,7 @@ mod tests {
         let mut reader = BufferedRead::new(data);
         let read = reader.split_read(|slice, mut splitter| {
             assert_eq!(slice, &b"12"[..]);
-            let mut remainder = splitter(2);
+            let remainder = splitter(2);
 
             remainder.split_read(|slice, _splitter| {
                 assert_eq!(slice, &b"34"[..]);

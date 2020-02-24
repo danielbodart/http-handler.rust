@@ -5,10 +5,10 @@ use std::cmp::min;
 use std::borrow::Cow;
 use std::fmt;
 use regex::Regex;
-use ast::*;
-use grammar::*;
-use parser::*;
-use io::*;
+use crate::ast::*;
+use crate::grammar::*;
+use crate::parser::*;
+use crate::io::*;
 
 
 pub trait HttpHandler {
@@ -17,7 +17,7 @@ pub trait HttpHandler {
 }
 
 pub trait WriteTo {
-    fn write_to(&mut self, write: &mut Write) -> Result<usize>;
+    fn write_to(&mut self, write: &mut dyn Write) -> Result<usize>;
 }
 
 pub struct FileHandler<T: AsRef<Path>> {
@@ -161,7 +161,7 @@ impl<'a> From<HttpMessage<'a>> for Message<'a> {
 }
 
 impl<'a> WriteTo for Message<'a> {
-    fn write_to(&mut self, write: &mut Write) -> Result<usize> {
+    fn write_to(&mut self, write: &mut dyn Write) -> Result<usize> {
         match *self {
             Message::Request(ref mut request) => request.write_to(write),
             Message::Response(ref mut response) => response.write_to(write),
@@ -250,7 +250,7 @@ impl<'a> fmt::Display for Request<'a> {
 }
 
 impl<'a> WriteTo for Request<'a> {
-    fn write_to(&mut self, write: &mut Write) -> Result<usize> {
+    fn write_to(&mut self, write: &mut dyn Write) -> Result<usize> {
         let text = format!("{}{}\r\n",
                            RequestLine { method: self.method, request_target: self.uri.to_string().as_str(), version: HttpVersion { major: 1, minor: 1 } },
                            self.headers);
@@ -376,7 +376,7 @@ impl<'a> fmt::Display for Response<'a> {
 }
 
 impl<'a> WriteTo for Response<'a> {
-    fn write_to(&mut self, write: &mut Write) -> Result<usize> {
+    fn write_to(&mut self, write: &mut dyn Write) -> Result<usize> {
         let text = format!("{}{}\r\n",
                            StatusLine { code: self.code, description: self.description, version: HttpVersion { major: 1, minor: 1 } },
                            self.headers);
@@ -530,8 +530,8 @@ mod tests {
     #[test]
     fn can_parse_chunk_stream() {
         use std::io::BufRead;
-        use io::{BufferedRead, Streamer};
-        use ast::{Chunk, ChunkExtensions, Headers};
+        use crate::io::{BufferedRead, Streamer};
+        use crate::ast::{Chunk, ChunkExtensions, Headers};
 
         let data = &b"4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n0\r\n\r\nGET /new/request HTTP/1.1\r\n"[..];
         let buffered = BufferedRead::new(data);
@@ -557,7 +557,7 @@ mod tests {
     #[test]
     fn can_read_chunked_stream() {
         use std::io::{BufRead, Read};
-        use io::{BufferedRead};
+        use crate::io::{BufferedRead};
 
         let data = &b"4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n0\r\n\r\nGET /new/request HTTP/1.1\r\n"[..];
         let mut producer = BufferedRead::new(data);
@@ -577,7 +577,7 @@ mod tests {
     #[test]
     fn chunked_stream_always_reads_to_end() {
         use std::io::{BufRead};
-        use io::{BufferedRead};
+        use crate::io::{BufferedRead};
 
         let data = &b"4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n0\r\n\r\nGET /new/request HTTP/1.1\r\n"[..];
         let mut producer = BufferedRead::new(data);

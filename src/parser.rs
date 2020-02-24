@@ -3,7 +3,7 @@ extern crate nom;
 use std::io::{Result};
 use std::fmt;
 use nom::IResult;
-use io::SimpleError;
+use crate::io::SimpleError;
 
 #[macro_export] macro_rules! char_predicate {
     ($i:expr, $c: expr) => {

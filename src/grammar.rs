@@ -4,9 +4,9 @@ use nom::{is_digit, is_hex_digit, is_alphabetic, IResult};
 use std::{str};
 use std::borrow::Cow;
 
-use misc::*;
-use ast::*;
-use predicates::*;
+use crate::misc::*;
+use crate::ast::*;
+use crate::predicates::*;
 
 // HTTP-name     = %x48.54.54.50 ; "HTTP", case-sensitive
 named!(pub http_name, tag!("HTTP"));
@@ -213,7 +213,7 @@ named!(pub transfer_encoding <Vec<TransferCoding>>, separated_nonempty_list!(del
 
 #[cfg(test)]
 mod tests {
-    use ast::*;
+    use crate::ast::*;
     use nom::IResult::Done;
     use std::borrow::Cow;
 

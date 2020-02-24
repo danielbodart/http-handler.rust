@@ -14,19 +14,19 @@
     };
 }
 
-pub fn among<'a>(characters: &'a str) -> Box<Fn(u8) -> bool + 'a> {
+pub fn among<'a>(characters: &'a str) -> Box<dyn Fn(u8) -> bool + 'a> {
     Box::new(move |chr| {
         characters.chars().any(|it| it == chr as char)
     })
 }
 
-pub fn range(start:u8, end:u8) -> Box<Fn(u8) -> bool> {
+pub fn range(start:u8, end:u8) -> Box<dyn Fn(u8) -> bool> {
     Box::new(move |chr| {
         chr >= start && chr <= end
     })
 }
 
-pub fn ch(value:u8) -> Box<Fn(u8) -> bool> {
+pub fn ch(value:u8) -> Box<dyn Fn(u8) -> bool> {
     Box::new(move |chr| {
         chr == value
     })
