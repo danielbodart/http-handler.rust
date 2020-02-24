@@ -20,6 +20,6 @@ path = "src/main.rs"
 
 [dependencies]
 nom = { version = "2.0.1", features = ["verbose-errors"] }
-regex = "0.1.80"
+regex = "1.3.4"
 lazy_static = "1.4.0"
-reduce = "0.1.1"
+reduce = "0.1.2"

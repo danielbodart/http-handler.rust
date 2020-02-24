@@ -27,7 +27,7 @@ pub struct FileHandler<T: AsRef<Path>> {
 impl<T: AsRef<Path>> FileHandler<T> {
     pub fn new(base: T) -> FileHandler<T> {
         FileHandler {
-            base: base,
+            base,
         }
     }
 
@@ -65,7 +65,7 @@ pub struct LogHandler<H> where H: HttpHandler {
 impl<H> LogHandler<H> where H: HttpHandler {
     pub fn new(handler: H) -> LogHandler<H> {
         LogHandler {
-            handler: handler,
+            handler,
         }
     }
 }
@@ -98,11 +98,11 @@ impl<'a> Uri<'a> {
 
         let result = RFC3986.captures(value).unwrap();
         Uri {
-            scheme: result.at(1),
-            authority: result.at(2),
-            path: result.at(3).unwrap(),
-            query: result.at(4),
-            fragment: result.at(5),
+            scheme: result.get(1).map(|s|s.as_str()),
+            authority: result.get(2).map(|s|s.as_str()),
+            path: result.get(3).unwrap().as_str(),
+            query: result.get(4).map(|s|s.as_str()),
+            fragment: result.get(5).map(|s|s.as_str()),
         }
     }
 }
@@ -179,7 +179,7 @@ pub struct Request<'a> {
 
 impl<'a> Request<'a> {
     pub fn new(method: &'a str, url: &'a str, headers: Headers<'a>, entity: MessageBody<'a>) -> Request<'a> {
-        Request { method: method, uri: Uri::parse(url), headers: headers, entity: entity }
+        Request { method, uri: Uri::parse(url), headers, entity }
     }
 
     pub fn request(method: &'a str, url: &'a str) -> Request<'a> {
@@ -270,7 +270,7 @@ pub struct Response<'a> {
 
 impl<'a> Response<'a> {
     pub fn new(code: u16, description: &'a str, headers: Headers<'a>, entity: MessageBody<'a>) -> Response<'a> {
-        Response { code: code, description: description, headers: headers, entity: entity }.build()
+        Response { code, description, headers, entity }.build()
     }
 
     pub fn response(code: u16, description: &'a str) -> Response<'a> {
@@ -401,7 +401,7 @@ pub enum ChunkStreamState {
 
 impl<R> ChunkStream<R> where R: BufRead + Sized {
     pub fn new(read: R) -> ChunkStream<R> {
-        ChunkStream { read: read, state: ChunkStreamState::NotStarted }
+        ChunkStream { read, state: ChunkStreamState::NotStarted }
     }
 
     pub fn update_state(&mut self) {
@@ -440,16 +440,16 @@ impl<'a, R> Streamer<'a> for ChunkStream<R> where R: BufRead + Sized {
                 return None;
             }
 
-            match Chunk::read(buffer) {
+            return match Chunk::read(buffer) {
                 Ok((last @ Chunk::Last(..), consumed)) => {
                     self.state = ChunkStreamState::Last(consumed);
-                    return Some(Ok(last))
+                    Some(Ok(last))
                 },
                 Ok((chunk, consumed)) => {
                     self.state = ChunkStreamState::Consumed(consumed);
-                    return Some(Ok(chunk))
+                    Some(Ok(chunk))
                 },
-                Err(e) => return Some(Err(e))
+                Err(e) => Some(Err(e))
             };
         }
     }
