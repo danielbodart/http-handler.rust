@@ -1,6 +1,7 @@
 extern crate nom;
 
-use nom::{is_digit, is_hex_digit, is_alphabetic, IResult};
+use nom::{IResult};
+use nom::character::{is_digit, is_hex_digit, is_alphabetic};
 use std::{str};
 use std::borrow::Cow;
 
@@ -137,6 +138,10 @@ named!(pub message_head <MessageHead> , do_parse!(
     start_line:start_line >> headers:headers >> crlf >>
     (MessageHead { start_line:start_line, headers:headers})
   ));
+
+macro_rules! apply (
+  ($i:expr, $fun:expr, $($args:expr),* ) => ( $fun( $i, $($args),* ) );
+);
 
 // HTTP-message = start-line *( header-field CRLF ) CRLF [ message-body ]
 named!(pub http_message <HttpMessage> , do_parse!(

@@ -14,7 +14,7 @@ use crate::io::SimpleError;
                 if $c($i[0]) {
                     std::result::Result::Ok((&$i[1..], &$i[0..1]))
                 } else {
-                    std::result::Result::Err(nom::Err::Error(error_position!($i, nom::ErrorKind::Char)))
+                    std::result::Result::Err(nom::Err::Error(error_position!($i, nom::error::ErrorKind::Char)))
                 }
             }
         }

@@ -344,7 +344,7 @@ impl<'a> ChunkedBody<'a> {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct TransferParameter<'a> {
     name: &'a str,
     value: Option<Cow<'a, str>>,
@@ -358,7 +358,7 @@ impl<'a> TransferParameter<'a> {
 }
 
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum TransferCoding<'a> {
     Chunked,
     Compress,
