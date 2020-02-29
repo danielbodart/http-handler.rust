@@ -9,12 +9,12 @@ use crate::io::SimpleError;
     ($i:expr, $c: expr) => {
         {
             if $i.is_empty() {
-                nom::IResult::Incomplete(nom::Needed::Size(1))
+                std::result::Result::Err(nom::Err::Incomplete(nom::Needed::Size(1)))
             } else {
                 if $c($i[0]) {
-                    nom::IResult::Done(&$i[1..], &$i[0..1])
+                    std::result::Result::Ok((&$i[1..], &$i[0..1]))
                 } else {
-                    nom::IResult::Error(error_position!(nom::ErrorKind::Char, $i))
+                    std::result::Result::Err(nom::Err::Error(error_position!($i, nom::ErrorKind::Char)))
                 }
             }
         }
@@ -23,14 +23,17 @@ use crate::io::SimpleError;
 
 pub fn result<I, O>(result: IResult<I, O>) -> Result<(O, I)> where I: fmt::Debug {
     match result {
-        IResult::Done(remainder, output) => {
+        Ok((remainder, output)) => {
             Ok((output, remainder))
         },
-        IResult::Incomplete(needed) => {
+        Err(nom::Err::Incomplete(needed)) => {
             Err(SimpleError::debug(needed))
         },
-        IResult::Error(err) => {
+        Err(nom::Err::Error(err)) => {
             Err(SimpleError::debug(err))
         },
+        Err(nom::Err::Failure(f)) => {
+            Err(SimpleError::debug(f))
+        }
     }
 }

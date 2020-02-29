@@ -121,12 +121,13 @@ pub fn message_body<'a>(slice: &'a [u8], headers: &Headers<'a>) -> IResult<&'a [
     match headers.content_length() {
         Some(length) if length > 0 => {
             match take!(slice, length) {
-                IResult::Done(rest, body) => IResult::Done(rest, MessageBody::Slice(body)),
-                IResult::Error(e) => IResult::Error(e),
-                IResult::Incomplete(n) => IResult::Incomplete(n),
+                Ok((rest, body)) => Ok((rest, MessageBody::Slice(body))),
+                Err(nom::Err::Error(c)) => Err(nom::Err::Error(c)),
+                Err(nom::Err::Incomplete(n)) => Err(nom::Err::Incomplete(n)) ,
+                Err(nom::Err::Failure(c)) => Err(nom::Err::Failure(c)),
             }
         }
-        _ => IResult::Done(slice, MessageBody::None)
+        _ => IResult::Ok((slice, MessageBody::None))
     }
 }
 
@@ -214,140 +215,139 @@ named!(pub transfer_encoding <Vec<TransferCoding>>, separated_nonempty_list_comp
 #[cfg(test)]
 mod tests {
     use crate::ast::*;
-    use nom::IResult::Done;
     use std::borrow::Cow;
 
     #[test]
     fn http_name() {
-        assert_eq!(super::http_name(&b"HTTP"[..]), Done(&b""[..], &b"HTTP"[..]));
+        assert_eq!(super::http_name(&b"HTTP"[..]), Ok((&b""[..], &b"HTTP"[..])));
     }
 
     #[test]
     fn http_version() {
-        assert_eq!(super::http_version(&b"HTTP/1.1"[..]), Done(&b""[..], HttpVersion { major: 1, minor: 1 }));
+        assert_eq!(super::http_version(&b"HTTP/1.1"[..]), Ok((&b""[..], HttpVersion { major: 1, minor: 1 })));
     }
 
     #[test]
     fn request_target() {
-        assert_eq!(super::request_target(&b"/where?q=now"[..]), Done(&b""[..], "/where?q=now"));
-        assert_eq!(super::request_target(&b"http://www.example.org/pub/WWW/TheProject.html"[..]), Done(&b""[..], "http://www.example.org/pub/WWW/TheProject.html"));
-        assert_eq!(super::request_target(&b"www.example.com:80"[..]), Done(&b""[..], "www.example.com:80"));
-        assert_eq!(super::request_target(&b"*"[..]), Done(&b""[..], "*"));
+        assert_eq!(super::request_target(&b"/where?q=now"[..]), Ok((&b""[..], "/where?q=now")));
+        assert_eq!(super::request_target(&b"http://www.example.org/pub/WWW/TheProject.html"[..]), Ok((&b""[..], "http://www.example.org/pub/WWW/TheProject.html")));
+        assert_eq!(super::request_target(&b"www.example.com:80"[..]), Ok((&b""[..], "www.example.com:80")));
+        assert_eq!(super::request_target(&b"*"[..]), Ok((&b""[..], "*")));
     }
 
     #[test]
     fn tchar() {
-        assert_eq!(super::tchar(&b"abc"[..]), Done(&b"bc"[..], &b"a"[..]));
+        assert_eq!(super::tchar(&b"abc"[..]), Ok((&b"bc"[..], &b"a"[..])));
     }
 
     #[test]
     fn token() {
-        assert_eq!(super::token(&b"abc"[..]), Done(&b""[..], "abc"));
+        assert_eq!(super::token(&b"abc"[..]), Ok((&b""[..], "abc")));
     }
 
     #[test]
     fn method() {
-        assert_eq!(super::method(&b"GET"[..]), Done(&b""[..], "GET"));
+        assert_eq!(super::method(&b"GET"[..]), Ok((&b""[..], "GET")));
     }
 
     #[test]
     fn request_line() {
-        assert_eq!(super::request_line(&b"GET /where?q=now HTTP/1.1\r\n"[..]), Done(&b""[..], RequestLine { method: "GET", request_target: "/where?q=now", version: HttpVersion { major: 1, minor: 1 } }));
+        assert_eq!(super::request_line(&b"GET /where?q=now HTTP/1.1\r\n"[..]), Ok((&b""[..], RequestLine { method: "GET", request_target: "/where?q=now", version: HttpVersion { major: 1, minor: 1 } })));
     }
 
     #[test]
     fn status_code() {
-        assert_eq!(super::status_code(&b"200"[..]), Done(&b""[..], 200));
+        assert_eq!(super::status_code(&b"200"[..]), Ok((&b""[..], 200)));
     }
 
     #[test]
     fn reason_phrase() {
-        assert_eq!(super::reason_phrase(&b"OK"[..]), Done(&b""[..], "OK"));
-        assert_eq!(super::reason_phrase(&b"Not Found"[..]), Done(&b""[..], "Not Found"));
+        assert_eq!(super::reason_phrase(&b"OK"[..]), Ok((&b""[..], "OK")));
+        assert_eq!(super::reason_phrase(&b"Not Found"[..]), Ok((&b""[..], "Not Found")));
     }
 
     #[test]
     fn status_line() {
-        assert_eq!(super::status_line(&b"HTTP/1.1 200 OK\r\n"[..]), Done(&b""[..], StatusLine { version: HttpVersion { major: 1, minor: 1 }, code: 200, description: "OK" }));
+        assert_eq!(super::status_line(&b"HTTP/1.1 200 OK\r\n"[..]), Ok((&b""[..], StatusLine { version: HttpVersion { major: 1, minor: 1 }, code: 200, description: "OK" })));
     }
 
     #[test]
     fn start_line() {
-        assert_eq!(super::start_line(&b"GET /where?q=now HTTP/1.1\r\n"[..]), Done(&b""[..], StartLine::RequestLine(RequestLine { method: "GET", request_target: "/where?q=now", version: HttpVersion { major: 1, minor: 1 } })));
-        assert_eq!(super::start_line(&b"HTTP/1.1 200 OK\r\n"[..]), Done(&b""[..], StartLine::StatusLine(StatusLine { version: HttpVersion { major: 1, minor: 1 }, code: 200, description: "OK" })));
+        assert_eq!(super::start_line(&b"GET /where?q=now HTTP/1.1\r\n"[..]), Ok((&b""[..], StartLine::RequestLine(RequestLine { method: "GET", request_target: "/where?q=now", version: HttpVersion { major: 1, minor: 1 } }))));
+        assert_eq!(super::start_line(&b"HTTP/1.1 200 OK\r\n"[..]), Ok((&b""[..], StartLine::StatusLine(StatusLine { version: HttpVersion { major: 1, minor: 1 }, code: 200, description: "OK" }))));
     }
 
     #[test]
     fn field_name() {
-        assert_eq!(super::field_name(&b"Content-Type"[..]), Done(&b""[..], "Content-Type"));
+        assert_eq!(super::field_name(&b"Content-Type"[..]), Ok((&b""[..], "Content-Type")));
     }
 
     #[test]
     fn field_content() {
-        assert_eq!(super::field_content(&b"a  b"[..]), Done(&b""[..], &b"a  b"[..]));
-        assert_eq!(super::field_content(&b"a b"[..]), Done(&b""[..], &b"a b"[..]));
-        assert_eq!(super::field_content(&b"a"[..]), Done(&b""[..], &b"a"[..]));
+        assert_eq!(super::field_content(&b"a  b"[..]), Ok((&b""[..], &b"a  b"[..])));
+        assert_eq!(super::field_content(&b"a b"[..]), Ok((&b""[..], &b"a b"[..])));
+        assert_eq!(super::field_content(&b"a"[..]), Ok((&b""[..], &b"a"[..])));
     }
 
     #[test]
     fn field_value() {
-        assert_eq!(super::field_value(&b"plain/text"[..]), Done(&b""[..], Cow::from("plain/text")));
-        assert_eq!(super::field_value(&b"Spaces are allowed in the middle"[..]), Done(&b""[..], Cow::from("Spaces are allowed in the middle")));
-        assert_eq!(super::field_value(&b"You can al\r\n so wrap onto new lines!"[..]), Done(&b""[..], Cow::from("You can also wrap onto new lines!")));
+        assert_eq!(super::field_value(&b"plain/text"[..]), Ok((&b""[..], Cow::from("plain/text"))));
+        assert_eq!(super::field_value(&b"Spaces are allowed in the middle"[..]), Ok((&b""[..], Cow::from("Spaces are allowed in the middle"))));
+        assert_eq!(super::field_value(&b"You can al\r\n so wrap onto new lines!"[..]), Ok((&b""[..], Cow::from("You can also wrap onto new lines!"))));
     }
 
     #[test]
     fn header_field() {
-        assert_eq!(super::header_field(&b"Content-Type:plain/text"[..]), Done(&b""[..], Header::new("Content-Type", "plain/text")));
-        assert_eq!(super::header_field(&b"Content-Type: plain/text"[..]), Done(&b""[..], Header::new("Content-Type", "plain/text")));
-        assert_eq!(super::header_field(&b"Content-Type: plain/text "[..]), Done(&b""[..], Header::new("Content-Type", "plain/text")));
-        assert_eq!(super::header_field(&b"Content-Type: plain/\r\n text "[..]), Done(&b""[..], Header::new("Content-Type", "plain/text")));
+        assert_eq!(super::header_field(&b"Content-Type:plain/text"[..]), Ok((&b""[..], Header::new("Content-Type", "plain/text"))));
+        assert_eq!(super::header_field(&b"Content-Type: plain/text"[..]), Ok((&b""[..], Header::new("Content-Type", "plain/text"))));
+        assert_eq!(super::header_field(&b"Content-Type: plain/text "[..]), Ok((&b""[..], Header::new("Content-Type", "plain/text"))));
+        assert_eq!(super::header_field(&b"Content-Type: plain/\r\n text "[..]), Ok((&b""[..], Header::new("Content-Type", "plain/text"))));
     }
 
     #[test]
     fn http_message() {
-        assert_eq!(super::http_message(&b"GET /where?q=now HTTP/1.1\r\nContent-Type:plain/text\r\n\r\n"[..]), Done(&b""[..], HttpMessage {
+        assert_eq!(super::http_message(&b"GET /where?q=now HTTP/1.1\r\nContent-Type:plain/text\r\n\r\n"[..]), Ok((&b""[..], HttpMessage {
             start_line: StartLine::RequestLine(RequestLine { method: "GET", request_target: "/where?q=now", version: HttpVersion { major: 1, minor: 1 } }),
             headers: Headers(vec!(Header::new("Content-Type", "plain/text"))),
             body: MessageBody::None,
-        }));
-        assert_eq!(super::http_message(&b"HTTP/1.1 200 OK\r\nContent-Type:plain/text\r\n\r\n"[..]), Done(&b""[..], HttpMessage {
+        })));
+        assert_eq!(super::http_message(&b"HTTP/1.1 200 OK\r\nContent-Type:plain/text\r\n\r\n"[..]), Ok((&b""[..], HttpMessage {
             start_line: StartLine::StatusLine(StatusLine { version: HttpVersion { major: 1, minor: 1 }, code: 200, description: "OK" }),
             headers: Headers(vec!(Header::new("Content-Type", "plain/text"))),
             body: MessageBody::None,
-        }));
-        assert_eq!(super::http_message(&b"HTTP/1.1 200 OK\r\nContent-Type:plain/text\r\nContent-Length:3\r\n\r\nabc"[..]), Done(&b""[..], HttpMessage {
+        })));
+        assert_eq!(super::http_message(&b"HTTP/1.1 200 OK\r\nContent-Type:plain/text\r\nContent-Length:3\r\n\r\nabc"[..]), Ok((&b""[..], HttpMessage {
             start_line: StartLine::StatusLine(StatusLine { version: HttpVersion { major: 1, minor: 1 }, code: 200, description: "OK" }),
             headers: Headers(vec!(Header::new("Content-Type", "plain/text"), Header::new("Content-Length", "3"))),
             body: MessageBody::Slice(&b"abc"[..]),
-        }));
+        })));
     }
 
     #[test]
     fn chunk_size() {
-        assert_eq!(super::chunk_size(&b"4\r\n"[..]), Done(&b"\r\n"[..], 4));
-        assert_eq!(super::chunk_size(&b"E\r\n"[..]), Done(&b"\r\n"[..], 14));
-        assert_eq!(super::chunk_size(&b"e\r\n"[..]), Done(&b"\r\n"[..], 14));
+        assert_eq!(super::chunk_size(&b"4\r\n"[..]), Ok((&b"\r\n"[..], 4)));
+        assert_eq!(super::chunk_size(&b"E\r\n"[..]), Ok((&b"\r\n"[..], 14)));
+        assert_eq!(super::chunk_size(&b"e\r\n"[..]), Ok((&b"\r\n"[..], 14)));
     }
 
     #[test]
     fn quoted_string() {
-        assert_eq!(super::quoted_string(&b"\"This is a quoted string\""[..]), Done(&b""[..], Cow::from("This is a quoted string")));
-        assert_eq!(super::quoted_string(&b"\"This is a \\\"quoted\\\" string\""[..]), Done(&b""[..], Cow::from("This is a \"quoted\" string")));
+        assert_eq!(super::quoted_string(&b"\"This is a quoted string\""[..]), Ok((&b""[..], Cow::from("This is a quoted string"))));
+        assert_eq!(super::quoted_string(&b"\"This is a \\\"quoted\\\" string\""[..]), Ok((&b""[..], Cow::from("This is a \"quoted\" string"))));
     }
 
     #[test]
     fn chunk_ext() {
-        assert_eq!(super::chunk_ext(&b";foo=bar"[..]), Done(&b""[..], ChunkExtensions(vec!(("foo", Some(Cow::from("bar")))))));
-        assert_eq!(super::chunk_ext(&b";foo"[..]), Done(&b""[..], ChunkExtensions(vec!(("foo", None)))));
-        assert_eq!(super::chunk_ext(&b";foo=bar;baz"[..]), Done(&b""[..], ChunkExtensions(vec!(("foo", Some(Cow::from("bar"))), ("baz", None)))));
-        assert_eq!(super::chunk_ext(&b" ; foo = bar ; baz"[..]), Done(&b""[..], ChunkExtensions(vec!(("foo", Some(Cow::from("bar"))), ("baz", None)))));
-        assert_eq!(super::chunk_ext(&b""[..]), Done(&b""[..], ChunkExtensions(vec!())));
+        assert_eq!(super::chunk_ext(&b";foo=bar"[..]), Ok((&b""[..], ChunkExtensions(vec!(("foo", Some(Cow::from("bar"))))))));
+        assert_eq!(super::chunk_ext(&b";foo"[..]), Ok((&b""[..], ChunkExtensions(vec!(("foo", None))))));
+        assert_eq!(super::chunk_ext(&b";foo=bar;baz"[..]), Ok((&b""[..], ChunkExtensions(vec!(("foo", Some(Cow::from("bar"))), ("baz", None))))));
+        assert_eq!(super::chunk_ext(&b" ; foo = bar ; baz"[..]), Ok((&b""[..], ChunkExtensions(vec!(("foo", Some(Cow::from("bar"))), ("baz", None))))));
+        assert_eq!(super::chunk_ext(&b""[..]), Ok((&b""[..], ChunkExtensions(vec!()))));
     }
 
     #[test]
     fn chunk() {
-        assert_eq!(super::chunk(&b"4;foo=bar\r\nWiki\r\n"[..]), Done(&b""[..], Chunk::Slice(ChunkExtensions(vec!(("foo", Some(Cow::from("bar"))))), &b"Wiki"[..])));
+        assert_eq!(super::chunk(&b"4;foo=bar\r\nWiki\r\n"[..]), Ok((&b""[..], Chunk::Slice(ChunkExtensions(vec!(("foo", Some(Cow::from("bar"))))), &b"Wiki"[..]))));
     }
 
 
@@ -359,29 +359,29 @@ mod tests {
             Chunk::Slice(ChunkExtensions(vec!()), &b" in\r\n\r\nchunks."[..])),
                                             ChunkExtensions(vec!()), Headers(vec!()));
         assert_eq!(super::chunked_body(&b"4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n0\r\n\r\n"[..]),
-        Done(&b""[..], chunked_body));
+        Ok((&b""[..], chunked_body)));
     }
 
     #[test]
     fn message_head() {
-        assert_eq!(super::message_head(&b"POST /where?q=now HTTP/1.1\r\nContent-Type:plain/text\r\nContent-Length:3\r\n\r\nabc"[..]), Done(&b"abc"[..], MessageHead {
+        assert_eq!(super::message_head(&b"POST /where?q=now HTTP/1.1\r\nContent-Type:plain/text\r\nContent-Length:3\r\n\r\nabc"[..]), Ok((&b"abc"[..], MessageHead {
             start_line: StartLine::RequestLine(RequestLine { method: "POST", request_target: "/where?q=now", version: HttpVersion { major: 1, minor: 1 } }),
             headers: Headers(vec!(Header::new("Content-Type", "plain/text"), Header::new("Content-Length", "3"))),
-        }));
+        })));
     }
 
     #[test]
     fn transfer_coding() {
-        assert_eq!(super::transfer_coding(&b"chunked"[..]), Done(&b""[..], TransferCoding::Chunked));
-        assert_eq!(super::transfer_coding(&b"compress"[..]), Done(&b""[..], TransferCoding::Compress));
-        assert_eq!(super::transfer_coding(&b"deflate"[..]), Done(&b""[..], TransferCoding::Deflate));
-        assert_eq!(super::transfer_coding(&b"gzip"[..]), Done(&b""[..], TransferCoding::Gzip));
-        assert_eq!(super::transfer_coding(&b"cat ; foo=bar"[..]), Done(&b""[..], TransferCoding::Extension("cat", vec![TransferParameter::new("foo", Some("bar"))])));
+        assert_eq!(super::transfer_coding(&b"chunked"[..]), Ok((&b""[..], TransferCoding::Chunked)));
+        assert_eq!(super::transfer_coding(&b"compress"[..]), Ok((&b""[..], TransferCoding::Compress)));
+        assert_eq!(super::transfer_coding(&b"deflate"[..]), Ok((&b""[..], TransferCoding::Deflate)));
+        assert_eq!(super::transfer_coding(&b"gzip"[..]), Ok((&b""[..], TransferCoding::Gzip)));
+        assert_eq!(super::transfer_coding(&b"cat ; foo=bar"[..]), Ok((&b""[..], TransferCoding::Extension("cat", vec![TransferParameter::new("foo", Some("bar"))]))));
     }
 
     #[test]
     fn transfer_encoding() {
-        assert_eq!(super::transfer_encoding(&b"gzip, chunked"[..]), Done(&b""[..], vec![TransferCoding::Gzip, TransferCoding::Chunked]));
-        assert_eq!(super::transfer_encoding(&b"chunked"[..]), Done(&b""[..], vec![TransferCoding::Chunked]));
+        assert_eq!(super::transfer_encoding(&b"gzip, chunked"[..]), Ok((&b""[..], vec![TransferCoding::Gzip, TransferCoding::Chunked])));
+        assert_eq!(super::transfer_encoding(&b"chunked"[..]), Ok((&b""[..], vec![TransferCoding::Chunked])));
     }
 }
