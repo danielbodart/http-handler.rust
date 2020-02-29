@@ -34,9 +34,9 @@ named!(pub vchar, char_predicate!(range(0x21,0x7E)));
 // obs-text       = %x80-FF ; obsolete text
 named!(pub obs_text, char_predicate!(range(0x80,0xFF)));
 // OWS            = *( SP / HTAB ) ; optional whitespace
-named!(pub ows, map_res!(many0!(alt!(space | htab)), join_vec));
+named!(pub ows, map_res!(many0!(complete!(alt!(space | htab))), join_vec));
 // RWS            = 1*( SP / HTAB ) ; required whitespace
-named!(pub rws, map_res!(many1!(alt!(space | htab)), join_vec));
+named!(pub rws, map_res!(many1!(complete!(alt!(space | htab))), join_vec));
 // BWS            = OWS ; "bad" whitespace
 pub use self::ows as bws;
 
@@ -50,7 +50,7 @@ named!(pub quoted_text, alt!(htab | space | char_predicate!(or!(ch(0x21), range(
 named!(pub quoted_pair, preceded!(char!('\\'), alt!(htab | space | vchar | obs_text )));
 
 // quoted-string  = DQUOTE *( qdtext / quoted-pair ) DQUOTE
-named!(pub quoted_string <Cow<str>>, delimited!(double_quote, map_res!(many0!(alt!(quoted_text | quoted_pair)), to_cow_str), double_quote));
+named!(pub quoted_string <Cow<str>>, delimited!(double_quote, map_res!(many0!(complete!(alt!(quoted_text | quoted_pair))), to_cow_str), double_quote));
 
 // TODO: full impl
 named!(pub request_target <&str>, map_res!(is_not!(" "), str::from_utf8));
@@ -60,7 +60,7 @@ named!(pub request_target <&str>, map_res!(is_not!(" "), str::from_utf8));
 named!(pub tchar, char_predicate!(or!(among("!#$%&'*+-.^_`|~"), is_digit, is_alphabetic)));
 
 ////token = 1*tchar
-named!(pub token <&str>, map_res!(map_res!(many1!(tchar), join_vec), str::from_utf8));
+named!(pub token <&str>, map_res!(map_res!(many1!(complete!(tchar)), join_vec), str::from_utf8));
 
 //method = token
 pub use self::token as method;
@@ -72,10 +72,10 @@ named!(pub request_line <RequestLine>, do_parse!(
   ));
 
 //status-code    = 3DIGIT
-named!(pub status_code <u16>, map_res!(map_res!(map_res!(many_m_n!(3,3, digit), join_vec), str::from_utf8), parse_u16));
+named!(pub status_code <u16>, map_res!(map_res!(map_res!(many_m_n!(3,3, complete!(digit)), join_vec), str::from_utf8), parse_u16));
 
 //reason-phrase  = *( HTAB / SP / VCHAR / obs-text )
-named!(pub reason_phrase <&str>, map_res!(map_res!(many0!(alt!(htab | space | vchar | obs_text)), join_vec), str::from_utf8));
+named!(pub reason_phrase <&str>, map_res!(map_res!(many0!(complete!(alt!(htab | space | vchar | obs_text))), join_vec), str::from_utf8));
 
 // status-line = HTTP-version SP status-code SP reason-phrase CRLF
 named!(pub status_line <StatusLine>, do_parse!(
@@ -93,7 +93,7 @@ pub use self::token as field_name;
 // field-vchar    = VCHAR / obs-text
 named!(pub field_vchar, alt!(vchar | obs_text));
 
-named!(pub spaces, map_res!(many1!(alt!(space | htab)), join_vec));
+named!(pub spaces, map_res!(many1!(complete!(alt!(space | htab))), join_vec));
 
 // field-content  = field-vchar [ 1*( SP / HTAB ) field-vchar ]
 named!(pub field_content, do_parse!(
@@ -109,7 +109,7 @@ named!(pub field_content, do_parse!(
 named!(pub obs_fold, do_parse!( crlf >> spaces >> (Default::default()) ));
 
 // field-value    = *( field-content / obs-fold )
-named!(pub field_value <Cow<str>>, map_res!(many0!(alt!(field_content | obs_fold)), to_cow_str));
+named!(pub field_value <Cow<str>>, map_res!(many0!(complete!(alt!(field_content | obs_fold))), to_cow_str));
 
 // header-field   = field-name ":" OWS field-value OWS
 named!(pub header_field <Header>, do_parse!(
@@ -131,7 +131,7 @@ pub fn message_body<'a>(slice: &'a [u8], headers: &Headers<'a>) -> IResult<&'a [
     }
 }
 
-named!(pub headers <Headers>, map!(many0!(terminated!(header_field, crlf)), Headers));
+named!(pub headers <Headers>, map!(many0!(complete!(terminated!(header_field, crlf))), Headers));
 
 named!(pub message_head <MessageHead> , do_parse!(
     start_line:start_line >> headers:headers >> crlf >>
@@ -145,7 +145,7 @@ named!(pub http_message <HttpMessage> , do_parse!(
   ));
 
 // chunk-size     = 1*HEXDIG
-named!(pub chunk_size <u64>, map_res!(map_res!(map_res!(many1!(hex_digit), join_vec), str::from_utf8), parse_hex));
+named!(pub chunk_size <u64>, map_res!(map_res!(map_res!(many1!(complete!(hex_digit)), join_vec), str::from_utf8), parse_hex));
 
 // chunk-ext-name = token
 pub use self::token as chunk_ext_name;
@@ -154,10 +154,10 @@ pub use self::token as chunk_ext_name;
 named!(pub chunk_ext_value <Cow<str>>, alt!(map!(token, Cow::from) | quoted_string));
 
 //  chunk-ext      = *( BWS  ";" BWS chunk-ext-name [ BWS  "=" BWS chunk-ext-val ] )
-named!(pub chunk_ext <ChunkExtensions>, map!(many0!(do_parse!(
+named!(pub chunk_ext <ChunkExtensions>, map!(many0!(complete!(do_parse!(
     bws >> char!(';') >> bws >> name:chunk_ext_name >> value:opt!(complete!(preceded!(delimited!(bws, char!('='), bws), chunk_ext_value))) >>
     (name, value)
-)), ChunkExtensions));
+))), ChunkExtensions));
 
 // chunk-data     = 1*OCTET ; a sequence of chunk-size octets
 // chunk          = chunk-size [ chunk-ext ] CRLF chunk-data CRLF
@@ -173,7 +173,7 @@ named!(pub chunk_head <(u64, ChunkExtensions)>, do_parse!(
 
 // last-chunk     = 1*("0") [ chunk-ext ] CRLF
 named!(pub last_chunk <ChunkExtensions>, do_parse!(
-    many1!(char!('0')) >> extensions:chunk_ext >> crlf >>
+    many1!(complete!(char!('0'))) >> extensions:chunk_ext >> crlf >>
     (extensions)
 ));
 
@@ -182,7 +182,7 @@ pub use self::headers as trailer_part;
 
 // chunked-body   = *chunk last-chunk trailer-part CRLF
 named!(pub chunked_body <ChunkedBody>, do_parse!(
-    chunks:many0!(chunk) >> last:last_chunk >> trailers:trailer_part >> crlf >>
+    chunks:many0!(complete!(chunk)) >> last:last_chunk >> trailers:trailer_part >> crlf >>
     (ChunkedBody::new(chunks, last, trailers))
 ));
 
@@ -195,7 +195,7 @@ named!(pub transfer_parameter <TransferParameter>, do_parse!(
 
 // transfer-extension = token *( OWS ";" OWS transfer-parameter )
 named!(pub transfer_extension <TransferCoding>, do_parse!(
-    name:token >> params:many0!(do_parse!(ows >> char!(';') >> ows >> param: transfer_parameter >> (param))) >>
+    name:token >> params:many0!(complete!(do_parse!(ows >> char!(';') >> ows >> param: transfer_parameter >> (param)))) >>
     (TransferCoding::Extension(name, params))
 ));
 
@@ -229,16 +229,16 @@ mod tests {
 
     #[test]
     fn request_target() {
-        assert_eq!(super::request_target(&b"/where?q=now"[..]), Ok((&b""[..], "/where?q=now")));
-        assert_eq!(super::request_target(&b"http://www.example.org/pub/WWW/TheProject.html"[..]), Ok((&b""[..], "http://www.example.org/pub/WWW/TheProject.html")));
-        assert_eq!(super::request_target(&b"www.example.com:80"[..]), Ok((&b""[..], "www.example.com:80")));
-        assert_eq!(super::request_target(&b"*"[..]), Ok((&b""[..], "*")));
+        assert_eq!(super::request_target(&b"/where?q=now "[..]), Ok((&b" "[..], "/where?q=now")));
+        assert_eq!(super::request_target(&b"http://www.example.org/pub/WWW/TheProject.html "[..]), Ok((&b" "[..], "http://www.example.org/pub/WWW/TheProject.html")));
+        assert_eq!(super::request_target(&b"www.example.com:80 "[..]), Ok((&b" "[..], "www.example.com:80")));
+        assert_eq!(super::request_target(&b"* "[..]), Ok((&b" "[..], "*")));
     }
 
     #[test]
     fn tchar() {
         assert_eq!(super::tchar(&b"abc"[..]), Ok((&b"bc"[..], &b"a"[..])));
-    }
+    }    #[test]
 
     #[test]
     fn token() {

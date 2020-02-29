@@ -31,3 +31,9 @@ pub fn ch(value:u8) -> Box<dyn Fn(u8) -> bool> {
         chr == value
     })
 }
+
+pub fn not(predicate:Box<dyn Fn(u8) -> bool>) -> Box<dyn Fn(u8) -> bool> {
+    Box::new(move |chr| {
+        !predicate(chr)
+    })
+}
