@@ -209,7 +209,7 @@ named!(pub transfer_coding <TransferCoding>, alt!(
 
 //  Transfer-Encoding = 1#transfer-coding
 //  #rule: 1#element => element *( OWS "," OWS element )
-named!(pub transfer_encoding <Vec<TransferCoding>>, separated_nonempty_list!(delimited!(ows, char!(','), ows), transfer_coding));
+named!(pub transfer_encoding <Vec<TransferCoding>>, separated_nonempty_list_complete!(delimited!(ows, char!(','), ows), transfer_coding));
 
 #[cfg(test)]
 mod tests {
