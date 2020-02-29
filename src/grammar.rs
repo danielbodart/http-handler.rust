@@ -1,7 +1,7 @@
 extern crate nom;
 
 use nom::{IResult};
-use nom::character::{is_digit, is_hex_digit, is_alphabetic};
+use nom::character::{is_digit, is_hex_digit, is_alphabetic, complete};
 use std::{str};
 use std::borrow::Cow;
 
@@ -184,6 +184,8 @@ named!(pub last_chunk <ChunkExtensions>, do_parse!(
 
 // trailer-part   = *( header-field CRLF )
 pub use self::headers as trailer_part;
+use nom::multi::separated_nonempty_list;
+use nom::sequence::delimited;
 
 // chunked-body   = *chunk last-chunk trailer-part CRLF
 named!(pub chunked_body <ChunkedBody>, do_parse!(
@@ -215,7 +217,9 @@ named!(pub transfer_coding <TransferCoding>, alt!(
 
 //  Transfer-Encoding = 1#transfer-coding
 //  #rule: 1#element => element *( OWS "," OWS element )
-named!(pub transfer_encoding <Vec<TransferCoding>>, separated_nonempty_list!(delimited!(ows, char!(','), ows), transfer_coding));
+pub fn transfer_encoding(i: &[u8]) -> nom::IResult<&[u8], Vec<TransferCoding>, (&[u8], nom::error::ErrorKind)> {
+    separated_nonempty_list(delimited(ows, complete::char(','), ows), transfer_coding)(i)
+}
 
 #[cfg(test)]
 mod tests {
