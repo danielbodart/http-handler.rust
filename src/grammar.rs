@@ -15,15 +15,15 @@ use crate::misc::*;
 use crate::predicates::*;
 
 // trailer-part   = *( header-field CRLF )
-pub use self::headers as trailer_part;
+pub use headers as trailer_part;
 // BWS            = OWS ; "bad" whitespace
-pub use self::ows as bws;
+pub use ows as bws;
 //method = token
-pub use self::token as method;
+pub use token as method;
 // field-name     = token
-pub use self::token as field_name;
+pub use token as field_name;
 // chunk-ext-name = token
-pub use self::token as chunk_ext_name;
+pub use token as chunk_ext_name;
 
 // HTTP-name     = %x48.54.54.50 ; "HTTP", case-sensitive
 pub fn http_name(i: &[u8]) -> IResult<&[u8], &[u8], (&[u8], ErrorKind)> {
@@ -47,7 +47,9 @@ named!(pub http_version <HttpVersion>, do_parse!(
   ));
 
 // SP             =  %x20
-named!(pub space, tag!(" "));
+pub fn space(i: &[u8]) -> IResult<&[u8], &[u8], (&[u8], ErrorKind)> {
+    tag(" ")(i)
+}
 // CRLF           =  CR LF ; Internet standard newline
 named!(pub crlf, tag!("\r\n"));
 // HTAB           =  %x09 ; horizontal tab
