@@ -1,13 +1,29 @@
 extern crate nom;
 
-use nom::{IResult};
-use nom::character::{is_digit, is_hex_digit, is_alphabetic, complete};
-use std::{str};
 use std::borrow::Cow;
+use std::str;
 
-use crate::misc::*;
+use nom::character::{complete, is_alphabetic, is_digit, is_hex_digit};
+use nom::IResult;
+use nom::multi::{separated_nonempty_list, many0};
+use nom::sequence::delimited;
+
 use crate::ast::*;
+use crate::misc::*;
 use crate::predicates::*;
+
+// trailer-part   = *( header-field CRLF )
+pub use self::headers as trailer_part;
+// BWS            = OWS ; "bad" whitespace
+pub use self::ows as bws;
+//method = token
+pub use self::token as method;
+// field-name     = token
+pub use self::token as field_name;
+// chunk-ext-name = token
+pub use self::token as chunk_ext_name;
+use nom::bytes::complete::take;
+use nom::error::ErrorKind;
 
 // HTTP-name     = %x48.54.54.50 ; "HTTP", case-sensitive
 named!(pub http_name, tag!("HTTP"));
@@ -38,9 +54,6 @@ named!(pub obs_text, char_predicate!(range(0x80,0xFF)));
 named!(pub ows, map_res!(many0!(complete!(alt!(space | htab))), join_vec));
 // RWS            = 1*( SP / HTAB ) ; required whitespace
 named!(pub rws, map_res!(many1!(complete!(alt!(space | htab))), join_vec));
-// BWS            = OWS ; "bad" whitespace
-pub use self::ows as bws;
-
 // DQUOTE         =  %x22 ; " (Double Quote)
 named!(pub double_quote, tag!("\""));
 
@@ -63,9 +76,6 @@ named!(pub tchar, char_predicate!(or!(among("!#$%&'*+-.^_`|~"), is_digit, is_alp
 ////token = 1*tchar
 named!(pub token <&str>, map_res!(map_res!(many1!(complete!(tchar)), join_vec), str::from_utf8));
 
-//method = token
-pub use self::token as method;
-
 //request-line   = method SP request-target SP HTTP-version CRLF
 named!(pub request_line <RequestLine>, do_parse!(
     method: method >> space >> request_target: request_target >> space >> version: http_version >> crlf >>
@@ -87,9 +97,6 @@ named!(pub status_line <StatusLine>, do_parse!(
 
 // start-line     = request-line / status-line
 named!(pub start_line <StartLine>, alt!(map!(request_line, StartLine::RequestLine) | map!(status_line, StartLine::StatusLine)));
-
-// field-name     = token
-pub use self::token as field_name;
 
 // field-vchar    = VCHAR / obs-text
 named!(pub field_vchar, alt!(vchar | obs_text));
@@ -124,7 +131,7 @@ pub fn message_body<'a>(slice: &'a [u8], headers: &Headers<'a>) -> IResult<&'a [
             match take!(slice, length) {
                 Ok((rest, body)) => Ok((rest, MessageBody::Slice(body))),
                 Err(nom::Err::Error(c)) => Err(nom::Err::Error(c)),
-                Err(nom::Err::Incomplete(n)) => Err(nom::Err::Incomplete(n)) ,
+                Err(nom::Err::Incomplete(n)) => Err(nom::Err::Incomplete(n)),
                 Err(nom::Err::Failure(c)) => Err(nom::Err::Failure(c)),
             }
         }
@@ -152,9 +159,6 @@ named!(pub http_message <HttpMessage> , do_parse!(
 // chunk-size     = 1*HEXDIG
 named!(pub chunk_size <u64>, map_res!(map_res!(map_res!(many1!(complete!(hex_digit)), join_vec), str::from_utf8), parse_hex));
 
-// chunk-ext-name = token
-pub use self::token as chunk_ext_name;
-
 // chunk-ext-val  = token / quoted-string
 named!(pub chunk_ext_value <Cow<str>>, alt!(map!(token, Cow::from) | quoted_string));
 
@@ -166,10 +170,15 @@ named!(pub chunk_ext <ChunkExtensions>, map!(many0!(complete!(do_parse!(
 
 // chunk-data     = 1*OCTET ; a sequence of chunk-size octets
 // chunk          = chunk-size [ chunk-ext ] CRLF chunk-data CRLF
-named!(pub chunk <Chunk>, do_parse!(
-    size:chunk_size >> extensions:chunk_ext >> crlf >> data:take!(size) >> crlf >>
-    (Chunk::Slice(extensions, data))
-));
+pub fn chunk(i: &[u8]) -> nom::IResult<&[u8], Chunk, (&[u8], nom::error::ErrorKind)> {
+    let (i, size) = chunk_size(i)?;
+    if size == 0 { return Err(nom::Err::Error((i, ErrorKind::Complete))) };
+    let (i, extensions) = chunk_ext(i)?;
+    let (i, _) = crlf(i)?;
+    let (i, data) = take(size)(i)?;
+    let (i, _) = crlf(i)?;
+    Ok((i, Chunk::Slice(extensions, data)))
+}
 
 named!(pub chunk_head <(u64, ChunkExtensions)>, do_parse!(
     size:chunk_size >> extensions:chunk_ext >> crlf >>
@@ -182,17 +191,14 @@ named!(pub last_chunk <ChunkExtensions>, do_parse!(
     (extensions)
 ));
 
-// trailer-part   = *( header-field CRLF )
-pub use self::headers as trailer_part;
-use nom::multi::separated_nonempty_list;
-use nom::sequence::delimited;
-
 // chunked-body   = *chunk last-chunk trailer-part CRLF
-named!(pub chunked_body <ChunkedBody>, do_parse!(
-    chunks:many0!(complete!(chunk)) >> last:last_chunk >> trailers:trailer_part >> crlf >>
-    (ChunkedBody::new(chunks, last, trailers))
-));
-
+pub fn chunked_body(i: &[u8]) -> nom::IResult<&[u8], ChunkedBody, (&[u8], nom::error::ErrorKind)> {
+    let (i, chunks) = many0(chunk)(i)?;
+    let (i, last) = last_chunk(i)?;
+    let (i, trailers) = trailer_part(i)?;
+    let (i, _) = crlf(i)?;
+    Ok((i, ChunkedBody::new(chunks, last, trailers)))
+}
 
 // transfer-parameter = token / token BWS "=" BWS ( token / quoted-string )
 named!(pub transfer_parameter <TransferParameter>, do_parse!(
@@ -223,8 +229,9 @@ pub fn transfer_encoding(i: &[u8]) -> nom::IResult<&[u8], Vec<TransferCoding>, (
 
 #[cfg(test)]
 mod tests {
-    use crate::ast::*;
     use std::borrow::Cow;
+
+    use crate::ast::*;
 
     #[test]
     fn http_name() {
@@ -247,8 +254,9 @@ mod tests {
     #[test]
     fn tchar() {
         assert_eq!(super::tchar(&b"abc"[..]), Ok((&b"bc"[..], &b"a"[..])));
-    }    #[test]
+    }
 
+    #[test]
     #[test]
     fn token() {
         assert_eq!(super::token(&b"abc"[..]), Ok((&b""[..], "abc")));
@@ -368,7 +376,7 @@ mod tests {
             Chunk::Slice(ChunkExtensions(vec!()), &b" in\r\n\r\nchunks."[..])),
                                             ChunkExtensions(vec!()), Headers(vec!()));
         assert_eq!(super::chunked_body(&b"4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n0\r\n\r\n"[..]),
-        Ok((&b""[..], chunked_body)));
+                   Ok((&b""[..], chunked_body)));
     }
 
     #[test]
