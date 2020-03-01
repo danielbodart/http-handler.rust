@@ -3,9 +3,11 @@ extern crate nom;
 use std::borrow::Cow;
 use std::str;
 
+use nom::bytes::complete::{tag, take};
 use nom::character::{complete, is_alphabetic, is_digit, is_hex_digit};
+use nom::error::ErrorKind;
 use nom::IResult;
-use nom::multi::{separated_nonempty_list, many0};
+use nom::multi::{many0, separated_nonempty_list};
 use nom::sequence::delimited;
 
 use crate::ast::*;
@@ -22,17 +24,21 @@ pub use self::token as method;
 pub use self::token as field_name;
 // chunk-ext-name = token
 pub use self::token as chunk_ext_name;
-use nom::bytes::complete::take;
-use nom::error::ErrorKind;
 
 // HTTP-name     = %x48.54.54.50 ; "HTTP", case-sensitive
-named!(pub http_name, tag!("HTTP"));
+pub fn http_name(i: &[u8]) -> IResult<&[u8], &[u8], (&[u8], ErrorKind)> {
+    tag("HTTP")(i)
+}
 
 //  DIGIT          =  %x30-39 ; 0-9
-named!(pub digit, char_predicate!(is_digit));
+pub fn digit(i: &[u8]) -> IResult<&[u8], &[u8], (&[u8], ErrorKind)> {
+    char_predicate!( i , is_digit )
+}
 
 // HEXDIG (hexadecimal 0-9/A-F/a-f)
-named!(pub hex_digit, char_predicate!(is_hex_digit));
+pub fn hex_digit(i: &[u8]) -> IResult<&[u8], &[u8], (&[u8], ErrorKind)> {
+    char_predicate!( i , is_hex_digit )
+}
 
 // HTTP-version  = HTTP-name "/" DIGIT "." DIGIT
 named!(pub http_version <HttpVersion>, do_parse!(
@@ -127,14 +133,10 @@ named!(pub header_field <Header>, do_parse!(
 
 pub fn message_body<'a>(slice: &'a [u8], headers: &Headers<'a>) -> IResult<&'a [u8], MessageBody<'a>> {
     match headers.content_length() {
-        Some(length) if length > 0 => {
-            match take!(slice, length) {
-                Ok((rest, body)) => Ok((rest, MessageBody::Slice(body))),
-                Err(nom::Err::Error(c)) => Err(nom::Err::Error(c)),
-                Err(nom::Err::Incomplete(n)) => Err(nom::Err::Incomplete(n)),
-                Err(nom::Err::Failure(c)) => Err(nom::Err::Failure(c)),
-            }
-        }
+        Some(length) if length > 0 => match take!(slice, length) {
+            Ok((rest, body)) => Ok((rest, MessageBody::Slice(body))),
+            Err(a) => Err(a),
+        },
         _ => IResult::Ok((slice, MessageBody::None))
     }
 }
@@ -172,7 +174,7 @@ named!(pub chunk_ext <ChunkExtensions>, map!(many0!(complete!(do_parse!(
 // chunk          = chunk-size [ chunk-ext ] CRLF chunk-data CRLF
 pub fn chunk(i: &[u8]) -> nom::IResult<&[u8], Chunk, (&[u8], nom::error::ErrorKind)> {
     let (i, size) = chunk_size(i)?;
-    if size == 0 { return Err(nom::Err::Error((i, ErrorKind::Complete))) };
+    if size == 0 { return Err(nom::Err::Error((i, ErrorKind::Complete))); };
     let (i, extensions) = chunk_ext(i)?;
     let (i, _) = crlf(i)?;
     let (i, data) = take(size)(i)?;
