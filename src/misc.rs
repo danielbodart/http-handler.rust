@@ -21,7 +21,9 @@ impl Error for SliceError {
 
 impl<'a> fmt::Display for SliceError {
     fn fmt(&self, format: &mut fmt::Formatter) -> fmt::Result {
-        format.write_str(self.description())
+        format.write_str(match *self {
+            SliceError::NotAdjacent => "Can not join slices that are not next to each other",
+        })
     }
 }
 

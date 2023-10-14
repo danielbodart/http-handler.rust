@@ -261,7 +261,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn token() {
         assert_eq!(super::token(&b"abc"[..]), Ok((&b""[..], "abc")));
     }
